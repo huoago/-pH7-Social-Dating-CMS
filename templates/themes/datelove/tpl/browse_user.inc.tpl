@@ -51,7 +51,7 @@
                         <article class="dc-profile-card">
                             <a class="dc-profile-photo" href="{% (new UserCore)->getProfileLink($user->username) %}" aria-label="Ver perfil de {% $str->extract($user->username, PH7_MAX_USERNAME_LENGTH_SHOWN) %}">
                                 {{ $avatarDesign->get($user->username, $user->firstName, $user->sex, 400) }}
-                                <span class="dc-status-dot">{{ UserDesignCoreModel::userStatus($user->profileId) }}</span>
+                                {{ UserDesignCoreModel::userStatus($user->profileId) }}
                                 {if $user->featured}
                                     <span class="dc-featured-badge">Destacado</span>
                                 {/if}
@@ -61,7 +61,7 @@
                                     <a href="{% (new UserCore)->getProfileLink($user->username) %}">
                                         <strong>{% $str->extract($user->username, PH7_MAX_USERNAME_LENGTH_SHOWN) %}</strong>
                                     </a>
-                                    <span>{age}</span>
+                                    <span>{% $age %}</span>
                                 </div>
                                 <div class="dc-profile-location">
                                     <span>📍</span>
