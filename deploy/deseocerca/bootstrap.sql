@@ -45,15 +45,14 @@ UPDATE ph7_settings SET settingValue = 'DeseoCerca' WHERE settingName = 'emailNa
 UPDATE ph7_settings SET settingValue = 'DeseoCerca.com' WHERE settingName = 'watermarkTextImage';
 
 -- Disable unused/legacy community modules for the first production release.
--- They can be enabled later from the admin panel after moderation workflows are proven.
+-- The alternate cool-profile page is disabled so all profiles use the DeseoCerca safety/action layout.
 UPDATE ph7_sys_mods_enabled SET enabled = '0' WHERE folderName IN (
-    'affiliate', 'forum', 'note', 'blog', 'love-calculator', 'invite'
+    'affiliate', 'forum', 'note', 'blog', 'love-calculator', 'invite', 'cool-profile-page'
 );
 
 -- Keep the core social-discovery modules enabled.
 UPDATE ph7_sys_mods_enabled SET enabled = '1' WHERE folderName IN (
-    'picture', 'mail', 'im', 'friend', 'related-profile', 'user-dashboard',
-    'cool-profile-page', 'map'
+    'picture', 'mail', 'im', 'friend', 'related-profile', 'user-dashboard', 'map'
 );
 
 -- DeseoCerca-specific lightweight account relationships.
