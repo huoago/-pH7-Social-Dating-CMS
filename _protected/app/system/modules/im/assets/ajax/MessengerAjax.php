@@ -8,8 +8,6 @@
  * @license        MIT License; See LICENSE.md and COPYRIGHT.md in the root directory.
  *
  * @version        1.6
- *
- * @required       PHP 5.4 or higher.
  */
 
 namespace PH7;
@@ -32,6 +30,8 @@ use PH7\JustHttp\StatusCode;
 class MessengerAjax extends PermissionCore
 {
     private const DATETIME_FORMAT = 'Y-m-d H:i:s';
+    private const SEND_COOLDOWN_SECONDS = 2;
+    private const MAX_MESSAGE_LENGTH = 1000;
 
     private HttpRequest $oHttpRequest;
 
@@ -47,6 +47,7 @@ class MessengerAjax extends PermissionCore
         }
 
         Import::pH7App(PH7_SYS . PH7_MOD . 'im.models.MessengerModel');
+        Import::pH7App(PH7_SYS . PH7_MOD . 'user.models.BlockModel');
 
         $this->oHttpRequest = new HttpRequest();
         $this->oMessengerModel = new MessengerModel();
@@ -80,14 +81,22 @@ class MessengerAjax extends PermissionCore
 
     protected function heartbeat()
     {
-        $sFrom = $_SESSION['messenger_username'];
+        $sCurrentUser = $_SESSION['messenger_username'];
+        $sFrom = $sCurrentUser;
         $sTo = !empty($_SESSION['messenger_username_to']) ? $_SESSION['messenger_username_to'] : 0;
 
-        $oQuery = $this->oMessengerModel->select($sFrom);
+        $oQuery = $this->oMessengerModel->select($sCurrentUser);
         $sItems = '';
 
         foreach ($oQuery as $oData) {
             $sFrom = escape($oData->fromUser, true);
+
+            if ($this->isBlockedConversation($sCurrentUser, $sFrom)) {
+                $this->oMessengerModel->markReceivedById((int)$oData->messengerId);
+                unset($_SESSION['messenger_openBoxes'][$sFrom], $_SESSION['messenger_history'][$sFrom]);
+                continue;
+            }
+
             $sSent = escape($oData->sent, true);
             $sMsg = $this->sanitize($oData->message);
             $sMsg = Emoticon::init($sMsg, false);
@@ -110,6 +119,11 @@ class MessengerAjax extends PermissionCore
 
         if (!empty($_SESSION['messenger_openBoxes'])) {
             foreach ($_SESSION['messenger_openBoxes'] as $sBox => $sTime) {
+                if ($this->isBlockedConversation($sCurrentUser, $sBox)) {
+                    unset($_SESSION['messenger_openBoxes'][$sBox], $_SESSION['messenger_history'][$sBox]);
+                    continue;
+                }
+
                 if (!isset($_SESSION['messenger_boxes'][$sBox])) {
                     $iNow = time() - strtotime($sTime);
                     $sMsg = t('Sent %0%', VDate::textTimeStamp($sTime));
@@ -127,8 +141,10 @@ class MessengerAjax extends PermissionCore
             }
         }
 
-        if (!$this->isOnline($sFrom)) {
+        if (!$this->isOnline($sCurrentUser)) {
             $sItems = t('You need the ONLINE status in order to speak instantaneous.');
+        } elseif ($sTo !== 0 && $this->isBlockedConversation($sCurrentUser, (string)$sTo)) {
+            $sItems = '<small><em>Conversación deshabilitada por bloqueo.</em></small>';
         } elseif ($sTo !== 0 && !$this->isOnline($sTo)) {
             if (SysMod::isEnabled('mail')) {
                 $sItems = '<small><em>' . t("%0% is offline. Send a <a href='%1%'>Private Message</a> instead.", $sTo, Uri::get('mail', 'main', 'compose', $sTo)) . '</em></small>';
@@ -136,7 +152,7 @@ class MessengerAjax extends PermissionCore
                 $sItems = '<small><em>' . t('%0% is currently offline. Why not to chat later on?', $sTo) . '</em></small>';
             }
         } else {
-            $this->oMessengerModel->update($sFrom, $sTo);
+            $this->oMessengerModel->update($sCurrentUser, $sTo);
         }
 
         if ($sItems !== '') {
@@ -164,7 +180,9 @@ class MessengerAjax extends PermissionCore
         $sItems = '';
         if (!empty($_SESSION['messenger_openBoxes'])) {
             foreach ($_SESSION['messenger_openBoxes'] as $sBox => $sVoid) {
-                $sItems .= $this->boxSession($sBox);
+                if (!$this->isBlockedConversation($_SESSION['messenger_username'], $sBox)) {
+                    $sItems .= $this->boxSession($sBox);
+                }
             }
         }
 
@@ -183,20 +201,30 @@ class MessengerAjax extends PermissionCore
     protected function send()
     {
         $sFrom = $_SESSION['messenger_username'];
-        $sTo = $_SESSION['messenger_username_to'] = $this->oHttpRequest->post('to');
-        $sMsg = $this->oHttpRequest->post('message');
+        $sTo = $_SESSION['messenger_username_to'] = trim((string)$this->oHttpRequest->post('to'));
+        $sMsg = trim((string)$this->oHttpRequest->post('message'));
 
-        $_SESSION['messenger_openBoxes'][$this->oHttpRequest->post('to')] = date(self::DATETIME_FORMAT, time());
+        $_SESSION['messenger_openBoxes'][$sTo] = date(self::DATETIME_FORMAT, time());
 
         $sMsgTransform = $this->sanitize($sMsg);
         $sMsgTransform = Emoticon::init($sMsgTransform, false);
 
-        if (!isset($_SESSION['messenger_history'][$this->oHttpRequest->post('to')])) {
-            $_SESSION['messenger_history'][$this->oHttpRequest->post('to')] = '';
+        if (!isset($_SESSION['messenger_history'][$sTo])) {
+            $_SESSION['messenger_history'][$sTo] = '';
         }
+
+        $iNow = time();
+        $iLastSend = isset($_SESSION['messenger_last_send'][$sTo]) ? (int)$_SESSION['messenger_last_send'][$sTo] : 0;
 
         if (!$this->checkMembership() || !$this->group->instant_messaging) {
             $sMsgTransform = t("You need to <a href='%0%'>upgrade your membership</a> to be able to chat.", Uri::get('payment', 'main', 'index'));
+        } elseif ($sMsg === '' || mb_strlen($sMsg) > self::MAX_MESSAGE_LENGTH) {
+            $sMsgTransform = 'El mensaje debe tener entre 1 y ' . self::MAX_MESSAGE_LENGTH . ' caracteres.';
+        } elseif ($iNow - $iLastSend < self::SEND_COOLDOWN_SECONDS) {
+            $sMsgTransform = 'Estás enviando mensajes demasiado rápido. Espera un momento.';
+        } elseif ($this->isBlockedConversation($sFrom, $sTo)) {
+            $sMsgTransform = 'Conversación deshabilitada por bloqueo.';
+            unset($_SESSION['messenger_openBoxes'][$sTo]);
         } elseif (!$this->isOnline($sFrom)) {
             $sMsgTransform = t('You need the ONLINE status in order to chat with other users.');
         } elseif (!$this->isOnline($sTo)) {
@@ -207,11 +235,12 @@ class MessengerAjax extends PermissionCore
             }
         } else {
             $this->oMessengerModel->insert($sFrom, $sTo, $sMsg, (new CDateTime())->get()->dateTime(self::DATETIME_FORMAT));
+            $_SESSION['messenger_last_send'][$sTo] = $iNow;
         }
 
-        $_SESSION['messenger_history'][$this->oHttpRequest->post('to')] .= $this->setJsonContent(['status' => '1', 'user' => $sTo, 'msg' => $sMsgTransform]);
+        $_SESSION['messenger_history'][$sTo] .= $this->setJsonContent(['status' => '1', 'user' => $sTo, 'msg' => $sMsgTransform]);
 
-        unset($_SESSION['messenger_boxes'][$this->oHttpRequest->post('to')]);
+        unset($_SESSION['messenger_boxes'][$sTo]);
 
         Http::setContentType('application/json');
         echo $this->setJsonContent(
@@ -232,14 +261,12 @@ class MessengerAjax extends PermissionCore
 
     protected function setJsonContent(array $aData, $bEndComma = true)
     {
-        // Default array
         $aDefData = [
             'status' => '0',
             'user' => '',
             'msg' => ''
         ];
 
-        // Update array
         $aData += $aDefData;
 
         $sJsonData = json_encode(
@@ -250,11 +277,6 @@ class MessengerAjax extends PermissionCore
         return $bEndComma ? $sJsonData . ',' : $sJsonData;
     }
 
-    /**
-     * @param string $sUsername
-     *
-     * @return bool
-     */
     protected function isOnline($sUsername)
     {
         $oUserModel = new UserCoreModel();
@@ -265,11 +287,24 @@ class MessengerAjax extends PermissionCore
         return $bIsOnline;
     }
 
-    /**
-     * @param string $sText
-     *
-     * @return string
-     */
+    private function isBlockedConversation(string $sFirstUsername, string $sSecondUsername): bool
+    {
+        if ($sFirstUsername === '' || $sSecondUsername === '') {
+            return false;
+        }
+
+        $oUserModel = new UserCoreModel();
+        $iFirstId = (int)$oUserModel->getId(null, $sFirstUsername);
+        $iSecondId = (int)$oUserModel->getId(null, $sSecondUsername);
+        unset($oUserModel);
+
+        if ($iFirstId <= 0 || $iSecondId <= 0) {
+            return false;
+        }
+
+        return (new BlockModel())->hasBlockBetween($iFirstId, $iSecondId);
+    }
+
     protected function sanitize($sText)
     {
         $sText = escape($sText);
@@ -281,9 +316,8 @@ class MessengerAjax extends PermissionCore
     }
 }
 
-// Go only if the user is logged
 if (UserCore::auth()) {
-    $oSession = new Session(); // Initialize session & start_session() func
+    $oSession = new Session();
     if (empty($_SESSION['messenger_username'])) {
         $_SESSION['messenger_username'] = $oSession->get('member_username');
     }
