@@ -12,6 +12,7 @@ namespace PH7;
 
 defined('PH7') or exit('Restricted access');
 
+use PH7\Framework\File\Import;
 use PH7\Framework\Mail\Mail;
 use PH7\Framework\Mvc\Model\DbConfig;
 use PH7\Framework\Mvc\Request\Http;
@@ -28,6 +29,8 @@ class MailFormProcess extends Form
     public function __construct()
     {
         parent::__construct();
+
+        Import::pH7App(PH7_SYS . PH7_MOD . 'user.models.BlockModel');
 
         $this->oUserModel = new UserCoreModel;
         $oMailModel = new MailModel;
