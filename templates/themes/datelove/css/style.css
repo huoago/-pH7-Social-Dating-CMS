@@ -1,1 +1,131 @@
 @import url([$url_def_tpl_css]style.css);
+
+/* DeseoCerca V1 visual foundation */
+:root {
+    --dc-bg: #0f1117;
+    --dc-surface: #171a23;
+    --dc-surface-soft: #202431;
+    --dc-text: #f7f7fb;
+    --dc-muted: #a8adbb;
+    --dc-accent: #ef4f7a;
+    --dc-accent-strong: #d83a67;
+    --dc-border: rgba(255, 255, 255, 0.10);
+    --dc-radius: 16px;
+    --dc-shadow: 0 18px 45px rgba(0, 0, 0, 0.22);
+}
+
+body {
+    background: var(--dc-bg);
+    color: var(--dc-text);
+}
+
+a,
+a:visited {
+    color: var(--dc-accent);
+}
+
+a:hover,
+a:focus {
+    color: #ff7698;
+}
+
+#content,
+.container {
+    max-width: 1180px;
+}
+
+.navbar,
+.panel,
+.well,
+.modal-content,
+.dropdown-menu {
+    border-color: var(--dc-border);
+    border-radius: var(--dc-radius);
+}
+
+.panel,
+.well,
+.modal-content,
+.dropdown-menu {
+    background: var(--dc-surface);
+    box-shadow: var(--dc-shadow);
+}
+
+.btn-primary,
+.btn-success {
+    background: var(--dc-accent);
+    border-color: var(--dc-accent);
+    border-radius: 999px;
+    font-weight: 700;
+}
+
+.btn-primary:hover,
+.btn-primary:focus,
+.btn-success:hover,
+.btn-success:focus {
+    background: var(--dc-accent-strong);
+    border-color: var(--dc-accent-strong);
+}
+
+.form-control {
+    min-height: 44px;
+    background: var(--dc-surface-soft);
+    color: var(--dc-text);
+    border: 1px solid var(--dc-border);
+    border-radius: 12px;
+}
+
+.form-control:focus {
+    border-color: var(--dc-accent);
+    box-shadow: 0 0 0 3px rgba(239, 79, 122, 0.16);
+}
+
+.thumbnail,
+.user-card,
+.profile-card {
+    background: var(--dc-surface);
+    border: 1px solid var(--dc-border);
+    border-radius: var(--dc-radius);
+    overflow: hidden;
+    box-shadow: var(--dc-shadow);
+}
+
+#logo h1 a {
+    color: var(--dc-text);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    text-decoration: none;
+}
+
+footer {
+    color: var(--dc-muted);
+}
+
+#disclaimer-dialog {
+    background: var(--dc-surface);
+    color: var(--dc-text);
+    border: 1px solid var(--dc-border);
+    border-radius: 22px;
+    box-shadow: var(--dc-shadow);
+}
+
+#disclaimer-dialog .dc-adult-note {
+    max-width: 620px;
+    margin: 12px auto 20px;
+    color: var(--dc-muted);
+    line-height: 1.6;
+}
+
+@media (max-width: 767px) {
+    #content,
+    .container {
+        width: 100%;
+        padding-left: 14px;
+        padding-right: 14px;
+    }
+
+    .btn-lg {
+        width: 100%;
+        margin-bottom: 10px;
+    }
+}
