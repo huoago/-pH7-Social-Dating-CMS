@@ -16,6 +16,7 @@ use PH7\Framework\Date\Various as VDate;
 use PH7\Framework\Http\Http;
 use PH7\Framework\Module\Various as SysMod;
 use PH7\Framework\Mvc\Router\Uri;
+use PH7\Framework\Security\CSRF\Token;
 use PH7\Framework\Url\Header;
 use PH7\JustHttp\StatusCode;
 use stdClass;
@@ -32,7 +33,6 @@ class ProfileController extends ProfileBaseController
     {
         parent::__construct();
 
-        // Set the Profile username
         $this->sUsername = $this->httpRequest->get('username', Type::STRING);
 
         $this->setProfileId($this->oUserModel->getId(null, $this->sUsername));
@@ -44,7 +44,6 @@ class ProfileController extends ProfileBaseController
         $this->addCssFiles();
         $this->addAdditionalAssetFiles();
 
-        // Read the Profile information
         $oUser = $this->oUserModel->readProfile($this->iProfileId);
 
         if ($oUser && $this->doesProfileExist($oUser)) {
@@ -52,17 +51,36 @@ class ProfileController extends ProfileBaseController
                 $this->redirectToCoolProfileStyle();
             }
 
-            // The admins can view all profiles. And profile views won't be increased when admins visit a profile
             if ($this->isNotAdmin()) {
                 $this->initPrivacy($oUser);
             }
 
-            // Assign the profile background image to the view
+            $bInteractionBlocked = false;
+            $bBlockedByMe = false;
+            $bBlockedMe = false;
+            $bFavorite = false;
+
+            if ($this->bUserAuth && !$this->isOwnProfile()) {
+                $oBlockModel = new BlockModel();
+                $bBlockedByMe = $oBlockModel->isBlockedBy($this->iVisitorId, $this->iProfileId);
+                $bBlockedMe = $oBlockModel->isBlockedBy($this->iProfileId, $this->iVisitorId);
+
+                if ($bBlockedMe) {
+                    $this->view->page_title = 'Perfil no disponible';
+                    $this->view->h2_title = 'Perfil no disponible';
+                    $this->view->error = 'Este perfil no está disponible para tu cuenta.';
+                    $this->output();
+                    return;
+                }
+
+                $bInteractionBlocked = $bBlockedByMe;
+                $bFavorite = (new FavoriteModel())->exists($this->iVisitorId, $this->iProfileId);
+            }
+
             $this->view->img_background = $this->oUserModel->getBackground($this->iProfileId, 1);
 
             $oFields = $this->oUserModel->getInfoFields($this->iProfileId);
 
-            // Date of birth
             $this->view->birth_date = $oUser->birthDate;
             $this->view->birth_date_formatted = $this->dateTime->get($oUser->birthDate)->date();
 
@@ -102,7 +120,9 @@ class ProfileController extends ProfileBaseController
             );
 
             $this->imageToSocialMetaTags($oUser);
-            $this->setMenuBar($aData['first_name'], $oUser);
+            if (!$bInteractionBlocked) {
+                $this->setMenuBar($aData['first_name'], $oUser);
+            }
 
             if (SysMod::isEnabled('map')) {
                 $this->setMap($aData['city'], $aData['country'], $oUser);
@@ -129,8 +149,12 @@ class ProfileController extends ProfileBaseController
             $this->view->fields = $oFields;
             $this->view->is_logged = $this->bUserAuth;
             $this->view->is_own_profile = $this->isOwnProfile();
+            $this->view->interaction_blocked = $bInteractionBlocked;
+            $this->view->is_blocked_by_me = $bBlockedByMe;
+            $this->view->is_favorite = $bFavorite;
+            $this->view->favorite_csrf = $this->bUserAuth ? (new Token())->generate('favorite') : '';
+            $this->view->block_csrf = $this->bUserAuth ? (new Token())->generate('block') : '';
 
-            // Count number of views
             Statistic::setView($this->iProfileId, DbTableName::MEMBER);
         } else {
             $this->notFound();
@@ -152,9 +176,6 @@ class ProfileController extends ProfileBaseController
         }
     }
 
-    /**
-     * Add the General and Tabs Menu stylesheets.
-     */
     protected function addCssFiles(): void
     {
         $this->design->addCss(
@@ -195,18 +216,11 @@ class ProfileController extends ProfileBaseController
         return !empty($oUser->username) && $this->str->equalsIgnoreCase($this->sUsername, $oUser->username);
     }
 
-
-    /**
-     * @return bool TRUE if the admin is not logged in (TRUE as well if the admin use "login as user").
-     */
     private function isNotAdmin(): bool
     {
         return !AdminCore::auth() || UserCore::isAdminLoggedAs();
     }
 
-    /**
-     * @throws Framework\File\IOException
-     */
     private function redirectToCoolProfileStyle(): void
     {
         Header::redirect(
@@ -219,18 +233,10 @@ class ProfileController extends ProfileBaseController
         );
     }
 
-    /**
-     * Show a Not Found page.
-     *
-     * @throws Framework\Http\Exception
-     */
     private function notFound(): void
     {
         Http::setHeadersByCode(StatusCode::NOT_FOUND);
 
-        /**
-         * @internal We can include HTML tags in the title since the template will automatically escape them before displaying it.
-         */
         $sTitle = t('Whoops! "%0%" profile is not found.', substr($this->sUsername, 0, PH7_MAX_USERNAME_LENGTH), true);
         $this->view->page_title = $sTitle;
         $this->view->h2_title = $sTitle;
