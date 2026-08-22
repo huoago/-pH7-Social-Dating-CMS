@@ -67,6 +67,10 @@ a:focus {
     border-color: var(--dc-accent-strong);
 }
 
+.btn-default {
+    border-radius: 999px;
+}
+
 .form-control {
     min-height: 44px;
     background: var(--dc-surface-soft);
@@ -116,6 +120,170 @@ footer {
     line-height: 1.6;
 }
 
+/* Guest landing */
+.dc-splash {
+    padding: 10px 0 44px;
+}
+
+.dc-splash-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 8px 0 30px;
+}
+
+.dc-brand-lockup {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+}
+
+.dc-brand-lockup strong {
+    font-size: 26px;
+    letter-spacing: -0.04em;
+}
+
+.dc-brand-lockup span,
+.dc-step-label,
+.dc-eyebrow {
+    color: var(--dc-muted);
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+.dc-splash-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.55fr) minmax(340px, 0.75fr);
+    gap: 34px;
+    align-items: start;
+}
+
+.dc-splash-hero {
+    min-width: 0;
+}
+
+.dc-splash-hero > h1 {
+    max-width: 720px;
+    margin: 12px 0 16px;
+    font-size: clamp(42px, 6vw, 72px);
+    line-height: 0.98;
+    letter-spacing: -0.055em;
+    font-weight: 800;
+}
+
+.dc-hero-copy {
+    max-width: 680px;
+    margin-bottom: 22px;
+    color: var(--dc-muted);
+    font-size: 19px;
+    line-height: 1.65;
+}
+
+.dc-trust-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 0 0 30px;
+}
+
+.dc-trust-row span,
+.dc-location-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 34px;
+    padding: 7px 12px;
+    border: 1px solid var(--dc-border);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--dc-muted);
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.dc-signup-card {
+    position: sticky;
+    top: 22px;
+    padding: 26px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.055), rgba(255,255,255,0.025));
+    border: 1px solid var(--dc-border);
+    border-radius: 24px;
+    box-shadow: var(--dc-shadow);
+}
+
+.dc-signup-heading h2 {
+    margin: 7px 0 8px;
+    font-size: 32px;
+    letter-spacing: -0.035em;
+}
+
+.dc-signup-heading p,
+.dc-signup-note,
+.dc-promo-copy {
+    color: var(--dc-muted);
+    line-height: 1.6;
+}
+
+.dc-signup-note {
+    margin: 14px 0 0;
+    font-size: 12px;
+}
+
+.dc-existing-login {
+    margin-top: 26px;
+    padding-top: 24px;
+    border-top: 1px solid var(--dc-border);
+}
+
+.dc-discovery-preview {
+    margin-top: 30px;
+    padding: 22px;
+    background: rgba(255,255,255,0.025);
+    border: 1px solid var(--dc-border);
+    border-radius: 22px;
+}
+
+.dc-section-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 16px;
+    margin-bottom: 18px;
+}
+
+.dc-section-heading h2 {
+    margin: 5px 0 0;
+    font-size: 24px;
+    letter-spacing: -0.025em;
+}
+
+.dc-profile-window {
+    margin: 0;
+}
+
+.dc-promo-copy {
+    margin-top: 16px;
+}
+
+.dc-login-link {
+    background: transparent;
+    border: 1px solid var(--dc-border);
+    color: var(--dc-text) !important;
+    font-weight: 700;
+}
+
+@media (max-width: 991px) {
+    .dc-splash-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .dc-signup-card {
+        position: static;
+    }
+}
+
 @media (max-width: 767px) {
     #content,
     .container {
@@ -127,5 +295,37 @@ footer {
     .btn-lg {
         width: 100%;
         margin-bottom: 10px;
+    }
+
+    .dc-splash-topbar {
+        padding-bottom: 20px;
+    }
+
+    .dc-brand-lockup {
+        display: block;
+    }
+
+    .dc-brand-lockup span {
+        display: block;
+        margin-top: 2px;
+    }
+
+    .dc-splash-hero > h1 {
+        font-size: 44px;
+    }
+
+    .dc-hero-copy {
+        font-size: 17px;
+    }
+
+    .dc-section-heading {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .dc-signup-card,
+    .dc-discovery-preview {
+        padding: 18px;
+        border-radius: 18px;
     }
 }
