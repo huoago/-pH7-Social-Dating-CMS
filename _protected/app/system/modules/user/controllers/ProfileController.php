@@ -180,7 +180,9 @@ class ProfileController extends ProfileBaseController
     {
         $this->design->addCss(
             PH7_LAYOUT,
-            PH7_TPL . PH7_TPL_NAME . PH7_SH . PH7_CSS . 'tabs.css,' . PH7_SYS . PH7_MOD . $this->registry->module . PH7_SH . PH7_TPL . PH7_TPL_MOD_NAME . PH7_SH . PH7_CSS . 'general.css'
+            PH7_TPL . PH7_TPL_NAME . PH7_SH . PH7_CSS . 'tabs.css,' .
+            PH7_TPL . PH7_TPL_NAME . PH7_SH . PH7_CSS . 'profile_dc.css,' .
+            PH7_SYS . PH7_MOD . $this->registry->module . PH7_SH . PH7_TPL . PH7_TPL_MOD_NAME . PH7_SH . PH7_CSS . 'general.css'
         );
     }
 
