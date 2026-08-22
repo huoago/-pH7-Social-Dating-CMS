@@ -2,10 +2,11 @@
     <header class="dc-discovery-header">
         <div>
             <span class="dc-eyebrow">DeseoCerca · Perú</span>
-            <h1>Descubre personas cerca de ti</h1>
-            <p>Explora perfiles de adultos, filtra por ubicación y encuentra conexiones con más control y privacidad.</p>
+            <h1>{if !empty($is_nearby)}Personas cerca de ti{else}Descubre personas cerca de ti{/if}</h1>
+            <p>{if !empty($is_nearby)}Resultados por tu ciudad o zona de perfil, sin publicar coordenadas GPS exactas.{else}Explora perfiles de adultos, filtra por ubicación y encuentra conexiones con más control y privacidad.{/if}</p>
         </div>
         <div class="dc-discovery-actions">
+            <a class="btn btn-default" href="{{ $design->url('user','browse','nearby') }}">📍 Cerca de mí</a>
             <a class="btn btn-default" href="{{ $design->url('user','search','advanced') }}">Filtros avanzados</a>
             {if !$is_user_auth}
                 <a class="btn btn-primary" href="{{ $design->url('user','signup','step1') }}">Crear perfil</a>
