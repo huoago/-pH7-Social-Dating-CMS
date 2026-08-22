@@ -160,3 +160,5 @@ Do not deploy production media or secrets into GitHub.
 ## Reference code policy
 
 The pH7Builder fork is used because it already contains mature dating/social logic and is MIT licensed. Upstream copyright and license files must remain intact. DeseoCerca-specific work should stay isolated on the `deseocerca-v1` branch until it has passed CI and staging acceptance.
+
+CI was explicitly re-triggered after GitHub Actions was enabled on the fork.
