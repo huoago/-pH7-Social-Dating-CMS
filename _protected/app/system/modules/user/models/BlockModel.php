@@ -35,6 +35,20 @@ class BlockModel
         return $this->isBlockedBy($firstId, $secondId) || $this->isBlockedBy($secondId, $firstId);
     }
 
+    public function getExcludedIds(int $profileId): array
+    {
+        $rStmt = Db::getInstance()->prepare(
+            'SELECT blockedId AS profileId FROM' . Db::prefix(self::TABLE) . 'WHERE blockerId = :profileId '
+            . 'UNION SELECT blockerId AS profileId FROM' . Db::prefix(self::TABLE) . 'WHERE blockedId = :profileId'
+        );
+        $rStmt->bindValue(':profileId', $profileId, \PDO::PARAM_INT);
+        $rStmt->execute();
+        $aIds = array_map('intval', $rStmt->fetchAll(\PDO::FETCH_COLUMN));
+        Db::free($rStmt);
+
+        return array_values(array_unique($aIds));
+    }
+
     public function add(int $blockerId, int $blockedId): bool
     {
         $rStmt = Db::getInstance()->prepare(
