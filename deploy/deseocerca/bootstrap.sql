@@ -1,0 +1,80 @@
+-- DeseoCerca V1 post-install bootstrap for pH7Builder 18.x
+-- Run only AFTER the browser installer has created the production database.
+-- Review the database prefix before execution if you chose a prefix other than ph7_.
+
+START TRANSACTION;
+
+UPDATE ph7_settings SET settingValue = 'DeseoCerca' WHERE settingName = 'siteName';
+UPDATE ph7_settings SET settingValue = 'datelove' WHERE settingName = 'defaultTemplate';
+UPDATE ph7_settings SET settingValue = 'dark' WHERE settingName = 'navbarType';
+UPDATE ph7_settings SET settingValue = '1' WHERE settingName = 'splashPage';
+UPDATE ph7_settings SET settingValue = '1' WHERE settingName = 'usersBlock';
+UPDATE ph7_settings SET settingValue = '1' WHERE settingName = 'profileWithAvatarSet';
+UPDATE ph7_settings SET settingValue = '0' WHERE settingName = 'bgSplashVideo';
+UPDATE ph7_settings SET settingValue = '24' WHERE settingName = 'numberProfileSplashPage';
+
+-- Adult-only registration and launch-stage trust & safety defaults.
+UPDATE ph7_settings SET settingValue = '18' WHERE settingName = 'minAgeRegistration';
+UPDATE ph7_settings SET settingValue = '1' WHERE settingName = 'requireRegistrationAvatar';
+UPDATE ph7_settings SET settingValue = '2' WHERE settingName = 'userActivationType';
+UPDATE ph7_settings SET settingValue = '10' WHERE settingName = 'minPasswordLength';
+UPDATE ph7_settings SET settingValue = '1' WHERE settingName = 'isCaptchaUserSignup';
+UPDATE ph7_settings SET settingValue = '1' WHERE settingName = 'avatarManualApproval';
+UPDATE ph7_settings SET settingValue = '1' WHERE settingName = 'pictureManualApproval';
+UPDATE ph7_settings SET settingValue = '1' WHERE settingName = 'videoManualApproval';
+UPDATE ph7_settings SET settingValue = '1' WHERE settingName = 'sendReportMail';
+UPDATE ph7_settings SET settingValue = '1' WHERE settingName = 'disclaimer';
+UPDATE ph7_settings SET settingValue = '1' WHERE settingName = 'cookieConsentBar';
+
+-- Brand email identities. SMTP credentials stay in PH7_MAILER_DSN on the server.
+UPDATE ph7_settings SET settingValue = 'noreply@deseocerca.com' WHERE settingName = 'returnEmail';
+UPDATE ph7_settings SET settingValue = 'admin@deseocerca.com' WHERE settingName = 'adminEmail';
+UPDATE ph7_settings SET settingValue = 'soporte@deseocerca.com' WHERE settingName = 'feedbackEmail';
+UPDATE ph7_settings SET settingValue = 'DeseoCerca' WHERE settingName = 'emailName';
+UPDATE ph7_settings SET settingValue = 'DeseoCerca.com' WHERE settingName = 'watermarkTextImage';
+
+-- Disable unused/legacy community modules for the first production release.
+-- They can be enabled later from the admin panel after moderation workflows are proven.
+UPDATE ph7_sys_mods_enabled SET enabled = '0' WHERE folderName IN (
+    'affiliate', 'forum', 'note', 'blog', 'love-calculator', 'invite'
+);
+
+-- Keep the core social-discovery modules enabled.
+UPDATE ph7_sys_mods_enabled SET enabled = '1' WHERE folderName IN (
+    'picture', 'mail', 'im', 'friend', 'related-profile', 'user-dashboard',
+    'cool-profile-page', 'map'
+);
+
+-- Spanish-first SEO copy for the initial Peru landing page.
+-- The UI language pack is installed separately before defaultLanguage is switched to es_ES.
+INSERT INTO ph7_meta_main (
+    langId, pageTitle, metaDescription, metaKeywords, headline, slogan, promoText,
+    metaRobots, metaAuthor, metaCopyright, metaRating, metaDistribution, metaCategory
+) VALUES (
+    'es_ES',
+    'Personas cerca de ti',
+    'Descubre perfiles de adultos en Perú, conecta de forma privada y utiliza herramientas de seguridad, bloqueo y denuncia.',
+    'personas cerca, adultos peru, perfiles, comunidad, citas, lima, peru',
+    'Descubre personas cerca de ti',
+    'Conecta con adultos reales, con más control y privacidad.',
+    'Crea tu perfil, explora personas por ubicación y empieza una conversación. Solo para mayores de 18 años.',
+    'index, follow, all',
+    'DeseoCerca',
+    'DeseoCerca',
+    'mature',
+    'global',
+    'dating'
+) ON DUPLICATE KEY UPDATE
+    pageTitle = VALUES(pageTitle),
+    metaDescription = VALUES(metaDescription),
+    metaKeywords = VALUES(metaKeywords),
+    headline = VALUES(headline),
+    slogan = VALUES(slogan),
+    promoText = VALUES(promoText),
+    metaAuthor = VALUES(metaAuthor),
+    metaCopyright = VALUES(metaCopyright),
+    metaRating = VALUES(metaRating),
+    metaDistribution = VALUES(metaDistribution),
+    metaCategory = VALUES(metaCategory);
+
+COMMIT;
