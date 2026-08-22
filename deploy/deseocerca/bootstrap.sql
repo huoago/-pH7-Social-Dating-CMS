@@ -1,10 +1,12 @@
 -- DeseoCerca V1 post-install bootstrap for pH7Builder 18.x
--- Run only AFTER the browser installer has created the production database.
+-- Run only AFTER the browser installer has created the production database
+-- and deploy/deseocerca/install-spanish.sh has installed the Spanish files.
 -- Review the database prefix before execution if you chose a prefix other than ph7_.
 
 START TRANSACTION;
 
 UPDATE ph7_settings SET settingValue = 'DeseoCerca' WHERE settingName = 'siteName';
+UPDATE ph7_settings SET settingValue = 'es_ES' WHERE settingName = 'defaultLanguage';
 UPDATE ph7_settings SET settingValue = 'datelove' WHERE settingName = 'defaultTemplate';
 UPDATE ph7_settings SET settingValue = 'dark' WHERE settingName = 'navbarType';
 UPDATE ph7_settings SET settingValue = '1' WHERE settingName = 'splashPage';
@@ -12,6 +14,15 @@ UPDATE ph7_settings SET settingValue = '1' WHERE settingName = 'usersBlock';
 UPDATE ph7_settings SET settingValue = '1' WHERE settingName = 'profileWithAvatarSet';
 UPDATE ph7_settings SET settingValue = '0' WHERE settingName = 'bgSplashVideo';
 UPDATE ph7_settings SET settingValue = '24' WHERE settingName = 'numberProfileSplashPage';
+
+-- Register Spanish in the application language selector.
+INSERT INTO ph7_languages_info (langId, name, charset, active, direction, author, website, email) VALUES
+('es_ES', 'Español', 'UTF-8', '1', 'ltr', 'pH7 Internationalization contributors', 'https://github.com/pH7Software/pH7-Internationalization', NULL)
+ON DUPLICATE KEY UPDATE
+    name = VALUES(name),
+    charset = VALUES(charset),
+    active = '1',
+    direction = VALUES(direction);
 
 -- Adult-only registration and launch-stage trust & safety defaults.
 UPDATE ph7_settings SET settingValue = '18' WHERE settingName = 'minAgeRegistration';
@@ -46,7 +57,6 @@ UPDATE ph7_sys_mods_enabled SET enabled = '1' WHERE folderName IN (
 );
 
 -- Spanish-first SEO copy for the initial Peru landing page.
--- The UI language pack is installed separately before defaultLanguage is switched to es_ES.
 INSERT INTO ph7_meta_main (
     langId, pageTitle, metaDescription, metaKeywords, headline, slogan, promoText,
     metaRobots, metaAuthor, metaCopyright, metaRating, metaDistribution, metaCategory
