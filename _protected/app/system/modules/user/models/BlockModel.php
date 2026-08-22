@@ -38,10 +38,11 @@ class BlockModel
     public function getExcludedIds(int $profileId): array
     {
         $rStmt = Db::getInstance()->prepare(
-            'SELECT blockedId AS profileId FROM' . Db::prefix(self::TABLE) . 'WHERE blockerId = :profileId '
-            . 'UNION SELECT blockerId AS profileId FROM' . Db::prefix(self::TABLE) . 'WHERE blockedId = :profileId'
+            'SELECT blockedId AS profileId FROM' . Db::prefix(self::TABLE) . 'WHERE blockerId = :ownerProfileId '
+            . 'UNION SELECT blockerId AS profileId FROM' . Db::prefix(self::TABLE) . 'WHERE blockedId = :targetProfileId'
         );
-        $rStmt->bindValue(':profileId', $profileId, \PDO::PARAM_INT);
+        $rStmt->bindValue(':ownerProfileId', $profileId, \PDO::PARAM_INT);
+        $rStmt->bindValue(':targetProfileId', $profileId, \PDO::PARAM_INT);
         $rStmt->execute();
         $aIds = array_map('intval', $rStmt->fetchAll(\PDO::FETCH_COLUMN));
         Db::free($rStmt);
