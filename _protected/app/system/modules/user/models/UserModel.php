@@ -25,6 +25,32 @@ class UserModel extends UserCoreModel
     }
 
     /**
+     * Keep profiles involved in a user block out of discovery results.
+     * The upstream count is preserved so we do not fork the large core SQL query;
+     * result rows are filtered at the module layer for easier upstream upgrades.
+     */
+    public function search(array $aParams, $bCount, $iOffset, $iLimit)
+    {
+        $mResult = parent::search($aParams, $bCount, $iOffset, $iLimit);
+
+        if ($bCount || empty($this->iProfileId) || !is_array($mResult) || empty($mResult)) {
+            return $mResult;
+        }
+
+        $aExcludedIds = array_flip((new BlockModel())->getExcludedIds((int)$this->iProfileId));
+        if (empty($aExcludedIds)) {
+            return $mResult;
+        }
+
+        return array_values(
+            array_filter(
+                $mResult,
+                static fn($oUser): bool => !isset($aExcludedIds[(int)$oUser->profileId])
+            )
+        );
+    }
+
+    /**
      * Join Step 1.
      *
      * @return int Returns the user's ID
