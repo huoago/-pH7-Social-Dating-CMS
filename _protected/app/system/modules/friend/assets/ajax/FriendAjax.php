@@ -10,6 +10,7 @@ namespace PH7;
 
 defined('PH7') or exit('Restricted access');
 
+use PH7\Framework\File\Import;
 use PH7\Framework\Http\Http;
 use PH7\Framework\Mail\Mail;
 use PH7\Framework\Mvc\Model\DbConfig;
@@ -36,6 +37,7 @@ class FriendAjax extends Core
             exit(jsonMsg(0, Form::errorTokenMsg()));
         }
 
+        Import::pH7App(PH7_SYS . PH7_MOD . 'user.models.BlockModel');
         $this->oFriendModel = new FriendModel;
 
         switch ($this->httpRequest->post('type')) {
@@ -60,13 +62,15 @@ class FriendAjax extends Core
     private function add()
     {
         $iFriendId = $this->httpRequest->post('friendId', 'int');
-        $iMemberId = $this->session->get('member_id');
+        $iMemberId = (int)$this->session->get('member_id');
 
-        if ($iMemberId == $iFriendId) {
+        if ($iMemberId === $iFriendId) {
             $this->sMsg = jsonMsg(0, t('You cannot be your own friend.'));
+        } elseif ((new BlockModel())->hasBlockBetween($iMemberId, (int)$iFriendId)) {
+            $this->sMsg = jsonMsg(0, 'No puedes añadir este perfil porque existe un bloqueo entre las cuentas.');
         } else {
             $this->mStatus = $this->oFriendModel->add(
-                $this->session->get('member_id'),
+                $iMemberId,
                 $iFriendId,
                 $this->dateTime->get()->dateTime('Y-m-d H:i:s')
             );
@@ -76,7 +80,6 @@ class FriendAjax extends Core
             } elseif ($this->mStatus === FriendModel::EXISTS_STATUS) {
                 $this->sMsg = jsonMsg(0, t('This profile already exists in your friends list.'));
             } elseif ($this->mStatus === FriendModel::UNEXISTENT_ID_STATUS) {
-                // This one should never happen unless someone changes the source code with firebug or other...
                 $this->sMsg = jsonMsg(0, t('Profile ID does not exist.'));
             } elseif ($this->mStatus === FriendModel::SUCCESS_STATUS) {
                 $this->sMsg = jsonMsg(1, t('Profile successfully added to your friends list.'));
@@ -94,10 +97,16 @@ class FriendAjax extends Core
 
     private function approval()
     {
-        $this->mStatus = $this->oFriendModel->approval(
-            $this->session->get('member_id'),
-            $this->httpRequest->post('friendId')
-        );
+        $iMemberId = (int)$this->session->get('member_id');
+        $iFriendId = (int)$this->httpRequest->post('friendId', 'int');
+
+        if ((new BlockModel())->hasBlockBetween($iMemberId, $iFriendId)) {
+            $this->sMsg = jsonMsg(0, 'No puedes aprobar esta solicitud porque existe un bloqueo entre las cuentas.');
+            echo $this->sMsg;
+            return;
+        }
+
+        $this->mStatus = $this->oFriendModel->approval($iMemberId, $iFriendId);
 
         if (!$this->mStatus) {
             $this->sMsg = jsonMsg(0, t('Cannot approve the friend. Please try later.'));
@@ -124,37 +133,16 @@ class FriendAjax extends Core
         echo $this->sMsg;
     }
 
-    /**
-     * Send an email to warn the friend request.
-     *
-     * @param int $iId friend ID
-     * @param UserCoreModel $oUserModel
-     *
-     * @return void
-     */
     private function sendMail($iId, UserCoreModel $oUserModel)
     {
         $sFriendEmail = $oUserModel->getEmail($iId);
         $sFriendUsername = $oUserModel->getUsername($iId);
-
-        /**
-         * Note: The predefined variables as %site_name% does not work here,
-         * because we are in an ajax script that is called before the definition of these variables.
-         */
-
-        /**
-         * Get the site name, because we do not have access to predefined variables.
-         */
         $sSiteName = DbConfig::getSetting('siteName');
 
         $this->view->content = t('Hello %0%!', $sFriendUsername) . '<br />' .
             t('<strong>%0%</strong> sent you a friendship request on %1%.', $this->session->get('member_username'), $sSiteName) . '<br />' .
             t('<a href="%0%">Click here</a> to see your friend request.', Uri::get('friend', 'main', 'index'));
 
-        /**
-         * @internal Because this class is called through ajax router, "PH7_TPL_NAME" isn't defined yet.
-         * So, it uses the "PH7_DEFAULT_THEME" constant, which is already defined.
-         */
         $sMessageHtml = $this->view->parseMail(
             PH7_PATH_SYS . 'global/' . PH7_VIEWS . PH7_DEFAULT_THEME . '/tpl/mail/sys/mod/friend/friend_request.tpl',
             $sFriendEmail
@@ -168,21 +156,13 @@ class FriendAjax extends Core
         (new Mail)->send($aInfo, $sMessageHtml);
     }
 
-    /**
-     * @param int $iFriendId
-     * @param UserCoreModel $oUserModel
-     *
-     * @return bool TRUE if the email notification is accepted and the user isn't online.
-     */
     private function canSendEmail($iFriendId, UserCoreModel $oUserModel)
     {
         return $oUserModel->isNotification($iFriendId, 'friendRequest')
             && !$oUserModel->isOnline($iFriendId);
-
     }
 }
 
-// Only for Members
 if (UserCore::auth()) {
     new FriendAjax;
 }
