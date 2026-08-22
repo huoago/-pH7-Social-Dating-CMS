@@ -23,10 +23,7 @@
 
         <p>
             <small>
-                Al entrar en DeseoCerca aceptas los
-                <a href="{% $terms_url %}" target="_blank" rel="nofollow noopener">Términos de Uso</a>
-                y la
-                <a href="{% $privacy_url %}" target="_blank" rel="nofollow noopener">Política de Privacidad</a>.
+                {lang 'Al entrar en DeseoCerca aceptas los <a href="%0%" target="_blank" rel="nofollow noopener">Términos de Uso</a> y la <a href="%1%" target="_blank" rel="nofollow noopener">Política de Privacidad</a>.', $terms_url, $privacy_url}
             </small>
         </p>
     </div>
