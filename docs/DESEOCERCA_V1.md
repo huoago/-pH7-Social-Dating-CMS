@@ -89,9 +89,9 @@ Initial design direction:
 
 ## Peru localization
 
-The initial repository still contains the upstream English UI strings. Spanish should be installed from the upstream pH7 Internationalization project and reviewed for Peruvian Spanish before `defaultLanguage` is switched to `es_ES`.
+Spanish is installed from the upstream pH7 Internationalization project with `deploy/deseocerca/install-spanish.sh`. The script pins the upstream revision and changes runtime timezone/date defaults to Lima/Peru while retaining the compatible `es_ES` locale identifier.
 
-The included bootstrap SQL already adds Spanish SEO metadata for the Peru landing page.
+The translations should still be reviewed for natural Peruvian Spanish before public launch. The bootstrap SQL registers Spanish, makes it the default UI language and adds Peru-focused Spanish SEO metadata.
 
 ## Production baseline
 
@@ -118,22 +118,23 @@ Do not deploy production media or secrets into GitHub.
 ## Deployment order
 
 1. Provision a clean VPS whose provider has approved the intended adult social/dating content and UGC model.
-2. Point the staging hostname to the VPS.
+2. Point a staging hostname to the VPS.
 3. Install PHP 8.2+, MySQL 8.0 and nginx.
 4. Deploy the `deseocerca-v1` branch.
 5. Run the pH7Builder browser installer with a one-time install token.
 6. Remove/disable installer access.
-7. Run `deploy/deseocerca/bootstrap.sql` against the installed database.
-8. Configure `PH7_MAILER_DSN` in the server environment and test activation email.
-9. Install and review the Spanish language pack, then switch the default language to `es_ES`.
-10. Complete manual account, photo, report, block, message and admin moderation tests.
-11. Enable production DNS for `deseocerca.com` only after the staging checks pass.
+7. Run `bash deploy/deseocerca/install-spanish.sh` from the application root.
+8. Run `deploy/deseocerca/bootstrap.sql` against the installed database.
+9. Configure `PH7_MAILER_DSN` in the server environment and test activation email.
+10. Review the Spanish UI in staging and adjust Peru-specific wording.
+11. Complete manual account, photo, report, block, message and admin moderation tests.
+12. Enable production DNS for `deseocerca.com` only after the staging checks pass.
 
 ## Next implementation milestones
 
 ### Sprint 1 — launch foundation
 
-- Spanish localization.
+- Spanish localization review.
 - Peru/Lima-first location defaults.
 - Registration/onboarding cleanup.
 - Modern home/discovery layout.
