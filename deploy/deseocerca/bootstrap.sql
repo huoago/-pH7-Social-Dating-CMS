@@ -56,6 +56,29 @@ UPDATE ph7_sys_mods_enabled SET enabled = '1' WHERE folderName IN (
     'cool-profile-page', 'map'
 );
 
+-- DeseoCerca-specific lightweight account relationships.
+CREATE TABLE IF NOT EXISTS ph7_members_favorites (
+    profileId int(10) unsigned NOT NULL,
+    favoriteId int(10) unsigned NOT NULL,
+    createdAt datetime NOT NULL,
+    PRIMARY KEY (profileId, favoriteId),
+    KEY favoriteId (favoriteId),
+    KEY favoriteCreatedAt (profileId, createdAt),
+    CONSTRAINT fk_dc_favorite_owner FOREIGN KEY (profileId) REFERENCES ph7_members(profileId) ON DELETE CASCADE,
+    CONSTRAINT fk_dc_favorite_target FOREIGN KEY (favoriteId) REFERENCES ph7_members(profileId) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS ph7_members_blocks (
+    blockerId int(10) unsigned NOT NULL,
+    blockedId int(10) unsigned NOT NULL,
+    createdAt datetime NOT NULL,
+    PRIMARY KEY (blockerId, blockedId),
+    KEY blockedId (blockedId),
+    KEY blockCreatedAt (blockerId, createdAt),
+    CONSTRAINT fk_dc_block_owner FOREIGN KEY (blockerId) REFERENCES ph7_members(profileId) ON DELETE CASCADE,
+    CONSTRAINT fk_dc_block_target FOREIGN KEY (blockedId) REFERENCES ph7_members(profileId) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- Spanish-first SEO copy for the initial Peru landing page.
 INSERT INTO ph7_meta_main (
     langId, pageTitle, metaDescription, metaKeywords, headline, slogan, promoText,
