@@ -29,10 +29,10 @@
                     </a>
                     <div class="dc-profile-card-body">
                         <div class="dc-profile-title-row">
-                            <a href="{% (new UserCore)->getProfileLink($user->username) %}"><strong>{username}</strong></a>
+                            <a href="{% (new UserCore)->getProfileLink($user->username) %}"><strong>{% $user->username %}</strong></a>
                             <span>{% $age %}</span>
                         </div>
-                        <div class="dc-profile-location">📍 {city}{if !empty($user->state)}, {state}{/if}</div>
+                        <div class="dc-profile-location">📍 {% $str->upperFirst($user->city) %}{if !empty($user->state)}, {% $str->upperFirst($user->state) %}{/if}</div>
                         <div class="dc-profile-tags"><span>Guardado</span></div>
                     </div>
                 </article>
