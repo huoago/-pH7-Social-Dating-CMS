@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace PH7;
 
+use PH7\Framework\File\Import;
 use PH7\Framework\Mvc\Router\Uri;
 use PH7\Framework\Navigation\Page;
 use PH7\Framework\Security\CSRF\Token;
@@ -77,6 +78,10 @@ class BlockController extends Controller
 
         $oBlockModel->add($iBlockerId, $iBlockedId);
         (new FavoriteModel())->remove($iBlockerId, $iBlockedId);
+
+        Import::pH7App(PH7_SYS . PH7_MOD . 'friend.models.FriendModel');
+        (new FriendModel())->delete($iBlockerId, $iBlockedId);
+
         Header::redirect(Uri::get('user', 'block', 'index'));
     }
 }
