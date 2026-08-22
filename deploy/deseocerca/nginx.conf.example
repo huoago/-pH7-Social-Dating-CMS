@@ -1,0 +1,70 @@
+# DeseoCerca production nginx template
+# Replace placeholders before use. Keep the protected-path rules.
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name deseocerca.com www.deseocerca.com;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/deseocerca;
+    }
+
+    location / {
+        return 301 https://deseocerca.com$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name deseocerca.com www.deseocerca.com;
+
+    root /var/www/deseocerca;
+    index index.php index.html;
+
+    # Replace with the certificate paths created by your TLS provider.
+    ssl_certificate /etc/letsencrypt/live/deseocerca.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/deseocerca.com/privkey.pem;
+
+    client_max_body_size 25m;
+
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=(self)" always;
+
+    # Never expose application internals or repository metadata.
+    location ~ ^/(?:_protected|_repository|_tests|_tools|\.git)(?:/|$) {
+        deny all;
+        return 404;
+    }
+
+    # Installer must be removed/disabled immediately after production setup.
+    location ~ ^/_install(?:/|$) {
+        deny all;
+        return 404;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location ~ \.php$ {
+        try_files $uri =404;
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        fastcgi_param HTTPS on;
+        fastcgi_pass unix:/run/php/php8.2-fpm.sock;
+        fastcgi_read_timeout 60s;
+    }
+
+    location ~* \.(?:css|js|jpg|jpeg|png|gif|webp|svg|ico)$ {
+        expires 7d;
+        add_header Cache-Control "public, max-age=604800, immutable";
+        try_files $uri =404;
+    }
+
+    access_log /var/log/nginx/deseocerca.access.log;
+    error_log /var/log/nginx/deseocerca.error.log warn;
+}
