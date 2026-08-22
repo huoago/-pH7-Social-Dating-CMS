@@ -1,0 +1,17 @@
+{$STAGING_SITE_ADDRESS} {
+    encode zstd gzip
+
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options SAMEORIGIN
+        Referrer-Policy strict-origin-when-cross-origin
+        -Server
+    }
+
+    reverse_proxy app:80
+
+    log {
+        output stdout
+        format console
+    }
+}
