@@ -1,0 +1,111 @@
+name: DeseoCerca Staging Deploy
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deseocerca-staging
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      STAGING_HOST: ${{ secrets.DESEOCERCA_STAGING_HOST }}
+      STAGING_USER: ${{ secrets.DESEOCERCA_STAGING_USER }}
+      STAGING_PORT: ${{ secrets.DESEOCERCA_STAGING_PORT }}
+      STAGING_SSH_KEY: ${{ secrets.DESEOCERCA_STAGING_SSH_KEY }}
+      STAGING_SITE_ADDRESS: ${{ secrets.DESEOCERCA_STAGING_SITE_ADDRESS }}
+      DB_PASSWORD: ${{ secrets.DESEOCERCA_STAGING_DB_PASSWORD }}
+      DB_ROOT_PASSWORD: ${{ secrets.DESEOCERCA_STAGING_DB_ROOT_PASSWORD }}
+      MAILER_DSN: ${{ secrets.DESEOCERCA_STAGING_MAILER_DSN }}
+      REMOTE_DIR: /opt/deseocerca-staging
+
+    steps:
+      - name: Validate required staging secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(STAGING_HOST STAGING_USER STAGING_SSH_KEY DB_PASSWORD DB_ROOT_PASSWORD)
+          for name in "${required[@]}"; do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing required GitHub secret for ${name}."
+              exit 1
+            fi
+          done
+
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          port="${STAGING_PORT:-22}"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/deseocerca_staging
+          chmod 600 ~/.ssh/deseocerca_staging
+          ssh-keyscan -p "$port" -H "$STAGING_HOST" >> ~/.ssh/known_hosts
+
+      - name: Sync DeseoCerca branch to staging VPS
+        shell: bash
+        run: |
+          set -euo pipefail
+          port="${STAGING_PORT:-22}"
+          ssh -i ~/.ssh/deseocerca_staging -p "$port" "$STAGING_USER@$STAGING_HOST" \
+            "set -e; \
+             if [ -d '$REMOTE_DIR/.git' ]; then \
+               cd '$REMOTE_DIR'; \
+               git fetch --prune origin deseocerca-v1; \
+               git checkout -f deseocerca-v1; \
+               git reset --hard origin/deseocerca-v1; \
+             else \
+               mkdir -p '$REMOTE_DIR'; \
+               git clone --depth 1 --branch deseocerca-v1 https://github.com/huoago/-pH7-Social-Dating-CMS.git '$REMOTE_DIR'; \
+             fi"
+
+      - name: Write protected staging environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          port="${STAGING_PORT:-22}"
+          site_address="${STAGING_SITE_ADDRESS:-:80}"
+          cat > /tmp/deseocerca-staging.env <<EOF
+          MYSQL_DATABASE=deseocerca
+          MYSQL_USER=deseocerca
+          MYSQL_PASSWORD=${DB_PASSWORD}
+          MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
+          STAGING_SITE_ADDRESS=${site_address}
+          PH7_MAILER_DSN=${MAILER_DSN}
+          EOF
+          base64 -w0 /tmp/deseocerca-staging.env > /tmp/deseocerca-staging.env.b64
+          ssh -i ~/.ssh/deseocerca_staging -p "$port" "$STAGING_USER@$STAGING_HOST" \
+            "base64 -d > '$REMOTE_DIR/.env' && chmod 600 '$REMOTE_DIR/.env'" \
+            < /tmp/deseocerca-staging.env.b64
+          rm -f /tmp/deseocerca-staging.env /tmp/deseocerca-staging.env.b64
+
+      - name: Build and start staging stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          port="${STAGING_PORT:-22}"
+          ssh -i ~/.ssh/deseocerca_staging -p "$port" "$STAGING_USER@$STAGING_HOST" \
+            "set -e; \
+             command -v docker >/dev/null || { echo 'Docker is not installed on the staging VPS.'; exit 1; }; \
+             docker compose version >/dev/null; \
+             cd '$REMOTE_DIR'; \
+             docker compose --env-file .env -f deploy/deseocerca/compose.staging.yml up -d --build --remove-orphans; \
+             docker compose --env-file .env -f deploy/deseocerca/compose.staging.yml ps"
+
+      - name: Staging smoke check
+        shell: bash
+        run: |
+          set -euo pipefail
+          port="${STAGING_PORT:-22}"
+          ssh -i ~/.ssh/deseocerca_staging -p "$port" "$STAGING_USER@$STAGING_HOST" \
+            "set -e; \
+             cd '$REMOTE_DIR'; \
+             docker compose --env-file .env -f deploy/deseocerca/compose.staging.yml exec -T app php -v >/dev/null; \
+             docker compose --env-file .env -f deploy/deseocerca/compose.staging.yml exec -T caddy wget -qO- http://app/ >/dev/null; \
+             echo 'DeseoCerca staging containers are responding.'"
