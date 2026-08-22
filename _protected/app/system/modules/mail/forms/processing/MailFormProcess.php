@@ -46,6 +46,8 @@ class MailFormProcess extends Form
             \PFBC\Form::setError('form_compose_mail', t('Oops! You cannot reply to administrator! If you want to contact us, please use our <a href="%0%">contact form</a>.', Uri::get('contact', 'contact', 'index')));
         } elseif (!(new ExistCoreModel)->id($iRecipientId, DbTableName::MEMBER)) {
             \PFBC\Form::setError('form_compose_mail', t('Oops! The username "%0%" does not exist.', escape(substr($this->httpRequest->post('recipient'), 0, PH7_MAX_USERNAME_LENGTH), true)));
+        } elseif (!$bIsAdmin && (new BlockModel())->hasBlockBetween($iSenderId, (int)$iRecipientId)) {
+            \PFBC\Form::setError('form_compose_mail', 'No puedes enviar mensajes a este perfil porque existe un bloqueo entre las cuentas.');
         } elseif (!$bIsAdmin && !$oMailModel->checkWaitSend($iSenderId, $iTimeDelay, $sCurrentTime)) {
             \PFBC\Form::setError('form_compose_mail', Form::waitWriteMsg($iTimeDelay));
         } elseif (!$bIsAdmin && $oMailModel->isDuplicateContent($iSenderId, $sMessage)) {
@@ -81,12 +83,6 @@ class MailFormProcess extends Form
         }
     }
 
-    /**
-     * Send notification email.
-     *
-     * @param int $iRecipientId
-     * @param int $iMsgId
-     */
     private function sendMail($iRecipientId, $iMsgId): bool
     {
         $this->view->content = t('Hello %0%!', $this->httpRequest->post('recipient')) . '<br />' .
@@ -108,9 +104,6 @@ class MailFormProcess extends Form
         return (new Mail)->send($aInfo, $sMessageHtml);
     }
 
-    /**
-     * @return int
-     */
     private function getSenderId()
     {
         if ($this->isAdminEligible()) {
@@ -120,9 +113,6 @@ class MailFormProcess extends Form
         return (int)$this->session->get('member_id');
     }
 
-    /**
-     * @return string
-     */
     private function getSenderUsername()
     {
         if ($this->isAdminEligible()) {
@@ -132,9 +122,6 @@ class MailFormProcess extends Form
         return $this->session->get('member_username');
     }
 
-    /**
-     * @return string
-     */
     private function getSenderFirstName()
     {
         if ($this->isAdminEligible()) {
