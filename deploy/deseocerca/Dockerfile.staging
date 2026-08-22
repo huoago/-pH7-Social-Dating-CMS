@@ -1,0 +1,40 @@
+# syntax=docker/dockerfile:1
+
+ARG PHP_VERSION=8.2
+
+FROM composer:2 AS composer
+FROM php:${PHP_VERSION}-apache-bookworm
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libcurl4-openssl-dev \
+        libfreetype6-dev \
+        libjpeg62-turbo-dev \
+        libxml2-dev \
+        libonig-dev \
+        libpng-dev \
+        libwebp-dev \
+        libzip-dev \
+        unzip \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp \
+    && docker-php-ext-install -j"$(nproc)" curl dom exif gd mbstring pdo_mysql simplexml xml xmlwriter zip \
+    && a2enmod rewrite headers expires \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=composer /usr/bin/composer /usr/local/bin/composer
+COPY docker/php/uploads.ini /usr/local/etc/php/conf.d/ph7builder-uploads.ini
+COPY deploy/deseocerca/apache-deseocerca.conf /etc/apache2/conf-available/deseocerca.conf
+RUN a2enconf deseocerca
+
+WORKDIR /var/www/html
+COPY --chown=www-data:www-data . /var/www/html
+
+RUN composer install --no-interaction --no-progress --prefer-dist \
+    && php -r 'foreach (["curl", "dom", "exif", "fileinfo", "gd", "iconv", "mbstring", "openssl", "pdo_mysql", "simplexml", "xml", "xmlwriter", "zip", "zlib"] as $extension) { if (!extension_loaded($extension)) { fwrite(STDERR, "Missing PHP extension: {$extension}\n"); exit(1); } }' \
+    && find /var/www/html -type d -exec chmod 0755 {} + \
+    && find /var/www/html -type f -exec chmod 0644 {} + \
+    && find /var/www/html/_install/data/caches /var/www/html/_install/data/logs /var/www/html/_protected/app/configs /var/www/html/_protected/data /var/www/html/data /var/www/html/_repository/module -type d -exec chmod 0775 {} + \
+    && chown -R www-data:www-data /var/www/html
+
+ENV TZ=America/Lima
+EXPOSE 80
