@@ -25,9 +25,29 @@ class UserModel extends UserCoreModel
     }
 
     /**
-     * Keep profiles involved in a user block out of discovery results.
-     * The upstream count is preserved so we do not fork the large core SQL query;
-     * result rows are filtered at the module layer for easier upstream upgrades.
+     * Public member profiles must be in the normal active state. This keeps
+     * deletion-pending and inactivity-deactivated accounts out of direct URLs
+     * while admin tooling can still use the core model when necessary.
+     */
+    public function readProfile($iProfileId, $sTable = DbTableName::MEMBER)
+    {
+        $mProfile = parent::readProfile($iProfileId, $sTable);
+
+        if (
+            $sTable === DbTableName::MEMBER
+            && $mProfile
+            && (int)$mProfile->active !== RegistrationCore::NO_ACTIVATION
+        ) {
+            return false;
+        }
+
+        return $mProfile;
+    }
+
+    /**
+     * Keep profiles involved in a user block, or profiles that are not in the
+     * normal active state, out of discovery results. The upstream count is
+     * preserved so we do not fork the large core SQL query.
      */
     public function search(array $aParams, $bCount, $iOffset, $iLimit)
     {
@@ -38,14 +58,17 @@ class UserModel extends UserCoreModel
         }
 
         $aExcludedIds = array_flip((new BlockModel())->getExcludedIds((int)$this->iProfileId));
-        if (empty($aExcludedIds)) {
-            return $mResult;
-        }
 
         return array_values(
             array_filter(
                 $mResult,
-                static fn($oUser): bool => !isset($aExcludedIds[(int)$oUser->profileId])
+                static function ($oUser) use ($aExcludedIds): bool {
+                    if ((int)$oUser->active !== RegistrationCore::NO_ACTIVATION) {
+                        return false;
+                    }
+
+                    return !isset($aExcludedIds[(int)$oUser->profileId]);
+                }
             )
         );
     }
