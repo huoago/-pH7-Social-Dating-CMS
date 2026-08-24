@@ -8,6 +8,10 @@ on:
     branches:
       - 18.x
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -18,11 +22,122 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Validate Compose configuration
+      - name: Validate development Compose configuration
         run: docker compose config --quiet
 
       - name: Build development image
         run: docker compose build
+
+      - name: Validate DeseoCerca maintenance and deployment syntax
+        run: |
+          bash -n deploy/deseocerca/free-vm-bootstrap.sh
+          bash -n deploy/deseocerca/prepare-first-install.sh
+          bash -n deploy/deseocerca/apply-bootstrap.sh
+          bash -n deploy/deseocerca/backup.sh
+          bash -n deploy/deseocerca/restore-backup.sh
+          bash -n deploy/deseocerca/host-preflight.sh
+          bash -n deploy/deseocerca/release-gate.sh
+          bash -n deploy/deseocerca/promote-production.sh
+          bash -n deploy/deseocerca/rollback-production.sh
+          python3 -m py_compile \
+            deploy/deseocerca/update-env.py \
+            deploy/deseocerca/public-smoke.py \
+            deploy/deseocerca/record-production-approval.py
+          systemd-analyze calendar '*-*-* 03:20:00 America/Lima' >/dev/null
+          docker compose run --rm --no-deps php sh -lc \
+            "php -l deploy/deseocerca/cli-bootstrap.php && php -l deploy/deseocerca/account-lifecycle.php && php -l deploy/deseocerca/verify-runtime.php && php -l _protected/app/system/modules/user/models/AccountLifecycleModel.php && php -l _protected/app/system/modules/user/forms/DeactivateAccountForm.php && php -l _protected/app/system/modules/user/forms/processing/DeactivateAccountFormProcess.php"
+
+      - name: Exercise public-smoke HTTP client
+        shell: bash
+        run: |
+          set -euo pipefail
+          smoke_dir="$(mktemp -d)"
+          printf 'DeseoCerca smoke client\n' > "$smoke_dir/index.html"
+          python3 -m http.server 18080 --bind 127.0.0.1 --directory "$smoke_dir" >/tmp/deseocerca-public-smoke-http.log 2>&1 &
+          smoke_pid=$!
+          cleanup() {
+            kill "$smoke_pid" >/dev/null 2>&1 || true
+            wait "$smoke_pid" >/dev/null 2>&1 || true
+            rm -rf "$smoke_dir"
+          }
+          trap cleanup EXIT
+          for _ in {1..20}; do
+            curl -fsS http://127.0.0.1:18080/ >/dev/null && break
+            sleep 0.2
+          done
+          python3 - <<'PY'
+          import importlib.util
+
+          spec = importlib.util.spec_from_file_location(
+              "deseocerca_public_smoke",
+              "deploy/deseocerca/public-smoke.py",
+          )
+          assert spec is not None and spec.loader is not None
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          status, final_url, _, body = module.get("http://127.0.0.1:18080/")
+          assert status == 200
+          assert final_url == "http://127.0.0.1:18080/"
+          assert "DeseoCerca smoke client" in body
+          PY
+
+      - name: Validate safe staging environment overlay
+        run: |
+          set -euo pipefail
+          env_file="$(mktemp)"
+          trap 'rm -f "$env_file"' EXIT
+          cat > "$env_file" <<'EOF'
+          MYSQL_DATABASE=deseocerca
+          MYSQL_USER=deseocerca
+          MYSQL_PASSWORD=0123456789abcdef
+          MYSQL_ROOT_PASSWORD=fedcba9876543210
+          STAGING_SITE_ADDRESS=:80
+          PH7_MAILER_DSN=smtp://user:pass@example.invalid:587?encryption=tls&auth_mode=login
+          EOF
+          printf '%s\n' '{"STAGING_SITE_ADDRESS":"deseocerca.com www.deseocerca.com"}' \
+            | python3 deploy/deseocerca/update-env.py "$env_file"
+          grep -Fxq 'MYSQL_PASSWORD=0123456789abcdef' "$env_file"
+          grep -Fxq 'MYSQL_ROOT_PASSWORD=fedcba9876543210' "$env_file"
+          grep -Fxq 'STAGING_SITE_ADDRESS=deseocerca.com www.deseocerca.com' "$env_file"
+          grep -Fxq 'PH7_MAILER_DSN=smtp://user:pass@example.invalid:587?encryption=tls&auth_mode=login' "$env_file"
+          test "$(stat -c '%a' "$env_file")" = '600'
+
+      - name: Validate staging Compose configuration
+        env:
+          MYSQL_PASSWORD: ci-deseocerca-password
+          MYSQL_ROOT_PASSWORD: ci-deseocerca-root-password
+          STAGING_SITE_ADDRESS: :80
+        run: docker compose -f deploy/deseocerca/compose.staging.yml config --quiet
+
+      - name: Validate Caddy multi-host production binding
+        run: |
+          docker run --rm \
+            -e 'STAGING_SITE_ADDRESS=deseocerca.com www.deseocerca.com' \
+            -v "$PWD/deploy/deseocerca/Caddyfile.staging:/etc/caddy/Caddyfile:ro" \
+            caddy:2-alpine \
+            caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+
+      - name: Build staging image
+        run: docker build --file deploy/deseocerca/Dockerfile.staging --tag deseocerca-staging-ci .
+
+      - name: Validate staging locale, installer-token persistence, and runtime persistence
+        run: |
+          docker run --rm --entrypoint sh deseocerca-staging-ci -lc \
+            "sh -n /usr/local/bin/deseocerca-entrypoint && php -l deploy/deseocerca/account-lifecycle.php && php -l deploy/deseocerca/verify-runtime.php && test -s _protected/app/langs/es_ES/LC_MESSAGES/global.mo && grep -q 'timezone = \"America/Lima\"' _protected/app/langs/es_ES/config/config.ini"
+          docker volume create deseocerca-ci-runtime >/dev/null
+          docker run --rm \
+            -v deseocerca-ci-runtime:/var/lib/deseocerca/runtime \
+            deseocerca-staging-ci \
+            sh -lc "test -d /var/www/html/_install; php _install/create-install-token.php >/tmp/install-token.out; chown www-data:www-data /var/www/html/_install/data/caches/install-token.hash; sleep 6; test -s /var/lib/deseocerca/runtime/install-token.hash"
+          docker run --rm \
+            -v deseocerca-ci-runtime:/var/lib/deseocerca/runtime \
+            deseocerca-staging-ci \
+            sh -lc "test -s /var/www/html/_install/data/caches/install-token.hash; printf '%s\n' '<?php define(\"DESEOCERCA_CI\", true);' > /var/www/html/_constants.php; sleep 6; test ! -d /var/www/html/_install; test ! -e /var/lib/deseocerca/runtime/install-token.hash"
+          docker run --rm \
+            -v deseocerca-ci-runtime:/var/lib/deseocerca/runtime \
+            deseocerca-staging-ci \
+            sh -lc "grep -q DESEOCERCA_CI /var/www/html/_constants.php && test ! -d /var/www/html/_install && test ! -e /var/lib/deseocerca/runtime/install-token.hash"
+          docker volume rm deseocerca-ci-runtime >/dev/null
 
       - name: Start development stack
         run: docker compose up --detach --wait
@@ -40,4 +155,6 @@ jobs:
 
       - name: Stop development stack
         if: always()
-        run: docker compose down --volumes
+        run: |
+          docker compose down --volumes
+          docker volume rm deseocerca-ci-runtime >/dev/null 2>&1 || true

@@ -1,6 +1,16 @@
 name: Check Composer
 
-on: [ push, pull_request ]
+on:
+  push:
+    branches:
+      - 18.x
+  pull_request:
+    branches:
+      - 18.x
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   run:
@@ -41,5 +51,4 @@ jobs:
         run: composer validate --strict
 
       - name: Audit dependencies for known security vulnerabilities
-        # Checks composer.lock against the security advisory databases; fails the build on known CVEs
         run: composer audit --locked

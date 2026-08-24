@@ -16,13 +16,6 @@ use PH7\Framework\Mvc\Model\Engine\Model;
 
 class MessengerModel extends Model
 {
-    /**
-     * Select Data of content messenger.
-     *
-     * @param string $sTo Username
-     *
-     * @return array SQL content
-     */
     public function select($sTo)
     {
         $sSqlQuery = 'SELECT * FROM' . Db::prefix(DbTableName::MESSENGER) .
@@ -35,14 +28,6 @@ class MessengerModel extends Model
         return $rStmt->fetchAll(PDO::FETCH_OBJ);
     }
 
-    /**
-     * Update Message.
-     *
-     * @param string $sFrom The 'from' username
-     * @param string $sTo The 'to' username
-     *
-     * @return bool Returns TRUE on success or FALSE on failure
-     */
     public function update($sFrom, $sTo)
     {
         $sSqlQuery = 'UPDATE' . Db::prefix(DbTableName::MESSENGER) .
@@ -55,16 +40,19 @@ class MessengerModel extends Model
         return $rStmt->execute();
     }
 
-    /**
-     * Add a new message.
-     *
-     * @param string $sFrom Username
-     * @param string $sTo Username 2
-     * @param string $sMessage Message content
-     * @param string $sDate In date format: 0000-00-00 00:00:00
-     *
-     * @return bool Returns TRUE on success or FALSE on failure
-     */
+    public function markReceivedById(int $messengerId): bool
+    {
+        $rStmt = Db::getInstance()->prepare(
+            'UPDATE' . Db::prefix(DbTableName::MESSENGER) .
+            'SET recd = 1 WHERE messengerId = :messengerId LIMIT 1'
+        );
+        $rStmt->bindValue(':messengerId', $messengerId, PDO::PARAM_INT);
+        $bResult = $rStmt->execute();
+        Db::free($rStmt);
+
+        return $bResult;
+    }
+
     public function insert($sFrom, $sTo, $sMessage, $sDate)
     {
         $sSqlQuery = 'INSERT INTO' . Db::prefix(DbTableName::MESSENGER) .

@@ -1,0 +1,28 @@
+#cloud-config
+# DeseoCerca Oracle Cloud Always Free first-boot example.
+# Paste this into OCI instance Metadata > Initialization script / cloud-init.
+# Target image: Ubuntu 22.04 or 24.04, arm64 A1 or amd64 compatible shape.
+
+package_update: true
+package_upgrade: false
+
+write_files:
+  - path: /usr/local/sbin/deseocerca-first-boot.sh
+    owner: root:root
+    permissions: '0755'
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      export STAGING_SITE_ADDRESS=:80
+      curl -fsSL \
+        https://raw.githubusercontent.com/huoago/-pH7-Social-Dating-CMS/deseocerca-v1/deploy/deseocerca/free-vm-bootstrap.sh \
+        -o /root/free-vm-bootstrap.sh
+      chmod 700 /root/free-vm-bootstrap.sh
+      /root/free-vm-bootstrap.sh > /var/log/deseocerca-bootstrap.log 2>&1
+
+runcmd:
+  - [ bash, -lc, '/usr/local/sbin/deseocerca-first-boot.sh' ]
+
+final_message: >-
+  DeseoCerca first boot finished. Check /var/log/deseocerca-bootstrap.log
+  and /root/deseocerca-staging-secrets.txt on the VM.

@@ -31,6 +31,16 @@ COPY --chown=www-data:www-data . /var/www
 RUN composer install --no-interaction --no-progress --prefer-dist \
     && php -r 'foreach (["curl", "dom", "exif", "fileinfo", "gd", "iconv", "mbstring", "openssl", "pdo_mysql", "simplexml", "xml", "xmlwriter", "zip", "zlib"] as $extension) { if (!extension_loaded($extension)) { fwrite(STDERR, "Missing PHP extension: {$extension}\n"); exit(1); } }' \
     && php -r '$gd = gd_info(); if (empty($gd["FreeType Support"]) || empty($gd["WebP Support"])) { fwrite(STDERR, "GD requires FreeType and WebP support.\n"); exit(1); }' \
+    && mkdir -p \
+        /var/www/_install/data/caches \
+        /var/www/_install/data/logs \
+        /var/www/_protected/app/configs \
+        /var/www/_protected/data/backup \
+        /var/www/_protected/data/cache \
+        /var/www/_protected/data/log \
+        /var/www/_protected/data/tmp \
+        /var/www/data \
+        /var/www/_repository/module \
     && find /var/www -type d -exec chmod 0755 {} + \
     && find /var/www -type f -exec chmod 0644 {} + \
     && chmod 0775 /var/www \

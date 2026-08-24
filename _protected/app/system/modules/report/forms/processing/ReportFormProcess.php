@@ -14,9 +14,29 @@ defined('PH7') or exit('Restricted access');
 
 class ReportFormProcess extends Form
 {
+    private const MAX_DESCRIPTION_LENGTH = 2000;
+
     public function __construct()
     {
         parent::__construct();
+
+        $iReporterId = (int)$this->session->get('member_id');
+        $iTargetProfileId = (int)$this->httpRequest->post('spammer');
+
+        if ($iReporterId <= 0 || $iTargetProfileId <= 0 || $iReporterId === $iTargetProfileId) {
+            \PFBC\Form::setError('form_report', t('Unable to report abuse.'));
+
+            return;
+        }
+
+        // Never trust the hidden spammer field. A valid report must point to an
+        // existing member profile even when the reported content is a message,
+        // photo, comment or video belonging to that profile.
+        if (!(new UserCoreModel())->readProfile($iTargetProfileId)) {
+            \PFBC\Form::setError('form_report', t('Unable to report abuse.'));
+
+            return;
+        }
 
         $sUrl = $this->getUrl();
         $mNeedle = strstr($sUrl, '?', true);
@@ -27,12 +47,20 @@ class ReportFormProcess extends Form
             return;
         }
 
+        $sDescription = trim((string)$this->httpRequest->post('desc'));
+        if ($sDescription === '') {
+            \PFBC\Form::setError('form_report', t('Please explain why you are reporting this content.'));
+
+            return;
+        }
+        $sDescription = mb_substr($sDescription, 0, self::MAX_DESCRIPTION_LENGTH);
+
         $aData = [
-            'reporter_id' => $this->session->get('member_id'),
-            'spammer_id' => $this->httpRequest->post('spammer'),
+            'reporter_id' => $iReporterId,
+            'spammer_id' => $iTargetProfileId,
             'url' => ($mNeedle ? $mNeedle : $sUrl),
             'type' => $mContentType,
-            'desc' => $this->httpRequest->post('desc'),
+            'desc' => $sDescription,
             'date' => $this->dateTime->get()->dateTime('Y-m-d H:i:s')
         ];
 

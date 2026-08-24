@@ -1,35 +1,28 @@
-<div class="center">
+<div class="center deseocerca-legal">
+  <p><strong>DeseoCerca</strong> es una plataforma social para adultos (18+) accesible desde <a href="{url_root}">{url_root}</a>.</p>
 
-<p>This legal notice applies to the entire site and services of {site_name} at: <a href="{url_root}">{site_name}</a>.</p>
-<p>&nbsp;</p>
+  <h3>Responsable del servicio</h3>
+  <p>La identificación legal completa del operador, domicilio y datos fiscales aplicables deben publicarse antes del lanzamiento comercial de producción.</p>
+  <p><strong>Estado de lanzamiento:</strong> esta información es obligatoria para cerrar la verificación de producción y no debe sustituirse por datos ficticios.</p>
+  <p>Contacto operativo actual: <a href="mailto:{admin_email}" rel="nofollow">{admin_email}</a> o mediante el <a href="{{ $design->url('contact','contact','index') }}">formulario de contacto</a>.</p>
 
-<p><strong>Links</strong></p>
-<p>{site_name}, its sub-domains and other services may contain links to other websites that do not belong to {site_name}.<br />
-We do not control the content, links or resources that appear on those sites and we can not in any way be held liable for any links, content, resources and practices employed by websites linked to our sites.<br />
-In addition, these sites, resources or services, including content and links, may be changing.<br />
-These sites and services may have their own privacy policies and terms of use and we cannot be responsible for the protection and privacy of any information which you provide whilst visiting such sites.<br />
-You should exercise caution and look at the privacy statement applicable to the website in question.<br />
-Similarly, sites with a hypertext link to this site and its other services are not under the control of {site_name}, and thus declines any responsibility for their content and their use.<br />
-The user is solely responsible for their use.</p>
-<p>&nbsp;</p>
+  <h3>Alojamiento e infraestructura</h3>
+  <p>El proveedor de alojamiento de producción y la información exigible sobre su ubicación deberán añadirse a este aviso una vez seleccionado y contratado el entorno definitivo. El dominio, el alojamiento, el correo y otros proveedores técnicos pueden ser servicios independientes.</p>
 
-<p><strong>Copyright</strong></p>
-<p>The entire contents of this website, its subdomains and its other services are protected by laws on copyright.<br />
-No material from this website or its sub-domains and other services may not be copied, reproduced, modified, republished, uploaded, distorted, transmitted or distributed in any manner whatsoever.</p>
-<p>&nbsp;</p>
+  <h3>Naturaleza del servicio</h3>
+  <p>DeseoCerca facilita perfiles sociales, descubrimiento de personas, fotografías, mensajería y herramientas de seguridad. No es una agencia de acompañantes ni un intermediario para contratar servicios sexuales de pago. Está prohibido utilizar la plataforma para ofrecer, solicitar, reservar o intermediar servicios sexuales remunerados, así como para explotación, trata, contenido íntimo no consentido o cualquier actividad que involucre a menores de 18 años.</p>
 
-<p><strong>Publisher and Managing Editor</strong></p>
-<p>NAME OF YOUR PUBLISHER, MANAGING EDITOR HERE<br />
-Contact: <a href="mailto:{admin_email}" rel="nofollow">{admin_email}</a>.</p>
-<p>&nbsp;</p>
+  <h3>Contenido de usuarios</h3>
+  <p>Los usuarios son responsables del contenido que publican. DeseoCerca puede retirar contenido, limitar funciones o suspender cuentas cuando existan indicios de incumplimiento de los Términos, riesgos para otros usuarios o requerimientos legales válidos.</p>
 
-<p><strong>Site Hosting</strong></p>
-<p>HOSTING INFORMATION HERE</p>
-<p>&nbsp;</p>
+  <h3>Enlaces y terceros</h3>
+  <p>El sitio puede contener enlaces o servicios de terceros. Cada tercero mantiene sus propias condiciones y políticas. DeseoCerca no controla los sitios externos y el usuario debe revisar sus condiciones antes de compartir información o continuar fuera de la plataforma.</p>
 
-<p><strong>About Us</strong></p>
-<p>INFORMATION ABOUT YOU HERE</p>
-<p>&nbsp;</p>
-<p>For other questions, please <a href="{{ $design->url('contact','contact','index') }}">contact us</a>.</p>
+  <h3>Propiedad intelectual</h3>
+  <p>El software base utilizado por el proyecto conserva las licencias y avisos de sus respectivos titulares. Los elementos propios de DeseoCerca y el contenido aportado por usuarios están sujetos a los derechos que correspondan a sus titulares y a los Términos de Uso.</p>
 
+  <h3>Seguridad y reportes</h3>
+  <p>Para reportar un perfil o contenido, utiliza la función de reporte disponible dentro de la plataforma. Para incidencias de cuenta, privacidad o seguridad también puedes usar el <a href="{{ $design->url('contact','contact','index') }}">formulario de contacto</a>. Si existe peligro inmediato, utiliza los servicios de emergencia correspondientes a tu ubicación.</p>
+
+  <p class="small text-muted">Este aviso es una base operativa para el entorno de desarrollo. Los datos legales definitivos del operador y del alojamiento deben completarse y revisarse antes de habilitar producción pública.</p>
 </div>

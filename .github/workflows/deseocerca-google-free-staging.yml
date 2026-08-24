@@ -1,0 +1,211 @@
+name: DeseoCerca Google Free Staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      prepare_host:
+        description: Initialize a fresh Google Cloud Ubuntu e2-micro VM
+        required: true
+        default: false
+        type: boolean
+      apply_bootstrap:
+        description: Apply DeseoCerca bootstrap after browser installation
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deseocerca-google-free-staging
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      HOST: ${{ secrets.DESEOCERCA_STAGING_HOST }}
+      SSH_USER: ${{ secrets.DESEOCERCA_STAGING_USER }}
+      SSH_PORT: ${{ secrets.DESEOCERCA_STAGING_PORT }}
+      SSH_KEY: ${{ secrets.DESEOCERCA_STAGING_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DESEOCERCA_STAGING_KNOWN_HOSTS }}
+      SITE_ADDRESS: ${{ secrets.DESEOCERCA_STAGING_SITE_ADDRESS }}
+      MAILER_DSN: ${{ secrets.DESEOCERCA_STAGING_MAILER_DSN }}
+      TIDB_HOST: ${{ secrets.DESEOCERCA_TIDB_HOST }}
+      TIDB_USERNAME: ${{ secrets.DESEOCERCA_TIDB_USERNAME }}
+      TIDB_PASSWORD: ${{ secrets.DESEOCERCA_TIDB_PASSWORD }}
+      TIDB_DATABASE: ${{ secrets.DESEOCERCA_TIDB_DATABASE }}
+      REMOTE_DIR: /opt/deseocerca-staging
+      SOURCE_REF: ${{ github.ref_name }}
+      APP_IMAGE: deseocerca-free:${{ github.sha }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate required values
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(HOST SSH_USER SSH_KEY TIDB_HOST TIDB_USERNAME TIDB_PASSWORD)
+          for name in "${required[@]}"; do
+            test -n "${!name:-}" || { echo "Missing required secret: $name"; exit 1; }
+          done
+          case "$SOURCE_REF" in
+            deseocerca-v1|18.x) ;;
+            *) echo "Unsupported branch: $SOURCE_REF"; exit 1 ;;
+          esac
+          [[ "$SSH_USER" =~ ^[a-z_][a-z0-9_-]*\$?$ ]] || { echo "Invalid SSH user."; exit 1; }
+          [[ "$TIDB_HOST" =~ ^[A-Za-z0-9.-]+$ ]] || { echo "Invalid TiDB hostname."; exit 1; }
+
+          # pH7 currently contains one FULLTEXT index. TiDB Cloud Starter
+          # supports FULLTEXT in these AWS regions, so reject any other region
+          # before a deployment can begin.
+          if [[ ! "$TIDB_HOST" =~ \.(us-west-2|us-east-1|ap-northeast-1|eu-central-1|ap-southeast-1)\. ]]; then
+            echo "TiDB Cloud Starter must be in a FULLTEXT-supported AWS region (recommended: us-west-2)."
+            exit 1
+          fi
+
+          database="${TIDB_DATABASE:-deseocerca}"
+          [[ "$database" =~ ^[A-Za-z0-9_$-]{1,64}$ ]] || { echo "Invalid TiDB database."; exit 1; }
+
+      - name: Build immutable application image on GitHub runner
+        run: |
+          docker build --file deploy/deseocerca/Dockerfile.staging --tag "$APP_IMAGE" .
+          docker save "$APP_IMAGE" | gzip -1 > /tmp/deseocerca-image.tar.gz
+
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          port="${SSH_PORT:-22}"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deseocerca_free
+          chmod 600 ~/.ssh/deseocerca_free
+          if [ -n "${KNOWN_HOSTS:-}" ]; then
+            printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            for attempt in {1..10}; do
+              if ssh-keyscan -T 5 -p "$port" -H "$HOST" > ~/.ssh/known_hosts 2>/dev/null; then break; fi
+              [ "$attempt" -lt 10 ] || { echo "Unable to read SSH host key."; exit 1; }
+              sleep 6
+            done
+          fi
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Prepare fresh Google Free Tier host
+        if: ${{ inputs.prepare_host }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          port="${SSH_PORT:-22}"
+          ssh -i ~/.ssh/deseocerca_free -p "$port" "$SSH_USER@$HOST" \
+            "sudo -n DESEOCERCA_DEPLOY_USER='$SSH_USER' DESEOCERCA_BRANCH='$SOURCE_REF' STAGING_SITE_ADDRESS=':80' bash -s" \
+            < deploy/deseocerca/google-free-vm-bootstrap.sh
+
+      - name: Sync exact branch revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          port="${SSH_PORT:-22}"
+          ssh -i ~/.ssh/deseocerca_free -p "$port" "$SSH_USER@$HOST" \
+            "set -e; cd '$REMOTE_DIR'; \
+             git fetch --prune origin '+refs/heads/$SOURCE_REF:refs/remotes/origin/$SOURCE_REF'; \
+             git checkout -B '$SOURCE_REF' 'origin/$SOURCE_REF'; \
+             git reset --hard 'origin/$SOURCE_REF'; \
+             test \"\$(git rev-parse HEAD)\" = '$GITHUB_SHA'"
+
+      - name: Transfer prebuilt image to low-memory VM
+        shell: bash
+        run: |
+          set -euo pipefail
+          port="${SSH_PORT:-22}"
+          scp -i ~/.ssh/deseocerca_free -P "$port" /tmp/deseocerca-image.tar.gz "$SSH_USER@$HOST:/tmp/deseocerca-image.tar.gz"
+          ssh -i ~/.ssh/deseocerca_free -p "$port" "$SSH_USER@$HOST" \
+            "set -e; gzip -dc /tmp/deseocerca-image.tar.gz | docker load; \
+             docker tag '$APP_IMAGE' deseocerca-free:current; \
+             rm -f /tmp/deseocerca-image.tar.gz"
+          rm -f /tmp/deseocerca-image.tar.gz
+
+      - name: Store free-tier environment without logging secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > /tmp/deseocerca-free-env.json
+          import json, os
+          payload = {
+              "DESEOCERCA_APP_IMAGE": "deseocerca-free:current",
+              "STAGING_SITE_ADDRESS": os.environ.get("SITE_ADDRESS") or ":80",
+              "TIDB_HOST": os.environ["TIDB_HOST"],
+              "TIDB_USERNAME": os.environ["TIDB_USERNAME"],
+              "TIDB_PASSWORD": os.environ["TIDB_PASSWORD"],
+              "TIDB_DATABASE": os.environ.get("TIDB_DATABASE") or "deseocerca",
+          }
+          if os.environ.get("MAILER_DSN"):
+              payload["PH7_MAILER_DSN"] = os.environ["MAILER_DSN"]
+          print(json.dumps(payload))
+          PY
+          port="${SSH_PORT:-22}"
+          ssh -i ~/.ssh/deseocerca_free -p "$port" "$SSH_USER@$HOST" \
+            "python3 '$REMOTE_DIR/deploy/deseocerca/update-env.py' '$REMOTE_DIR/.env'" \
+            < /tmp/deseocerca-free-env.json
+          rm -f /tmp/deseocerca-free-env.json
+
+      - name: Start free-tier stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          port="${SSH_PORT:-22}"
+          ssh -i ~/.ssh/deseocerca_free -p "$port" "$SSH_USER@$HOST" \
+            "set -e; cd '$REMOTE_DIR'; \
+             compose='docker compose --env-file .env -f deploy/deseocerca/compose.free.yml'; \
+             \$compose up -d --remove-orphans; \
+             database=\"\$(sed -n 's/^TIDB_DATABASE=//p' .env | head -n1)\"; \
+             username=\"\$(sed -n 's/^TIDB_USERNAME=//p' .env | head -n1)\"; \
+             [[ \"\$database\" =~ ^[A-Za-z0-9_\$-]{1,64}\$ ]] || { echo 'Unsafe TiDB database value.'; exit 1; }; \
+             \$compose run --rm --no-deps -T --entrypoint mysql db-client \
+               --host=db-tls --port=3306 --user=\"\$username\" \
+               --connect-timeout=10 --execute=\"CREATE DATABASE IF NOT EXISTS \\\`\$database\\\` CHARACTER SET utf8mb4;\"; \
+             \$compose ps; \
+             sudo -n /bin/bash '$REMOTE_DIR/deploy/deseocerca/prepare-first-install-free.sh'"
+
+      - name: Apply post-install bootstrap
+        if: ${{ inputs.apply_bootstrap }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          port="${SSH_PORT:-22}"
+          ssh -i ~/.ssh/deseocerca_free -p "$port" "$SSH_USER@$HOST" \
+            "set -e; cd '$REMOTE_DIR'; /bin/bash '$REMOTE_DIR/deploy/deseocerca/apply-bootstrap-free.sh'"
+
+      - name: Free-tier runtime smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          port="${SSH_PORT:-22}"
+          ssh -i ~/.ssh/deseocerca_free -p "$port" "$SSH_USER@$HOST" \
+            "set -e; cd '$REMOTE_DIR'; \
+             compose='docker compose --env-file .env -f deploy/deseocerca/compose.free.yml'; \
+             \$compose ps --status running --services | grep -qx db-tls; \
+             \$compose ps --status running --services | grep -qx app; \
+             \$compose ps --status running --services | grep -qx caddy; \
+             \$compose ps --status running --services | grep -qx lifecycle; \
+             \$compose run --rm --no-deps -T --entrypoint mysql db-client \
+               --host=db-tls --port=3306 --user=\"\$(sed -n 's/^TIDB_USERNAME=//p' .env | head -n1)\" \
+               --database=\"\$(sed -n 's/^TIDB_DATABASE=//p' .env | head -n1)\" \
+               --connect-timeout=10 --execute='SELECT 1' >/dev/null; \
+             \$compose exec -T caddy wget -qO- http://app/ >/dev/null; \
+             if \$compose exec -T app test -s /var/www/html/_constants.php; then \
+               \$compose exec -T app test ! -d /var/www/html/_install; \
+               \$compose exec -T app php deploy/deseocerca/verify-runtime.php; \
+             else \
+               \$compose exec -T app test -d /var/www/html/_install; \
+               echo 'Waiting for first browser installation.'; \
+             fi"
+
+      - name: Remove temporary credentials
+        if: always()
+        shell: bash
+        run: |
+          rm -f ~/.ssh/deseocerca_free /tmp/deseocerca-free-env.json /tmp/deseocerca-image.tar.gz

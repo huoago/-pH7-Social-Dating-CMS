@@ -1,70 +1,55 @@
-<div class="center">
+<div class="center deseocerca-legal">
+  <p><strong>Última actualización: 23 de agosto de 2026.</strong></p>
 
-<p>This Privacy Policy governs the manner in which {site_name} collects, uses, maintains and discloses information collected from users (each, a "User") of the <a href="{url_root}">{url_root}</a> website ("Site"). This privacy policy applies to the Site and all products and services offered by {site_name}.</p>
-<p>&nbsp;</p>
+  <p>Esta Política de Privacidad explica cómo <strong>{site_name}</strong> trata la información cuando visitas <a href="{url_root}">{url_root}</a>, creas una cuenta o utilizas las funciones de perfiles, descubrimiento, mensajería, fotografías, reportes, bloqueos y soporte.</p>
 
-<p><strong>Personal identification information</strong></p>
-<p>We may collect personally identification information from Users in a variety of ways, including, but not limited to, when Users visit our site, register on the site, subscribe to the newsletter, fill out a form, and in connection with other activities, services, features or resources we make available on our Site. Users may be asked for, as appropriate, name, email address, mailing address. Users may, however, visit our Site anonymously. We will collect personal identification information from Users only if they voluntarily submit such information to us. Users can always refuse to supply personally identification information, except that it may prevent them from engaging in certain Site related activities.</p>
-<p>&nbsp;</p>
+  <h3>1. Personas adultas</h3>
+  <p>{site_name} es un servicio exclusivo para personas de <strong>18 años o más</strong>. No está dirigido a menores. Si detectamos una cuenta de una persona menor de edad, podremos bloquearla, retirar su contenido y adoptar las medidas necesarias para proteger a la persona afectada y cumplir las obligaciones aplicables.</p>
 
-<p><strong>Non-personal identification information</strong></p>
-<p>We may collect non-personal identification information about Users whenever they interact with our Site. Non-personal identification information may include the browser name, the type of computer and technical information about Users means of connection to our Site, such as the operating system and the Internet service providers utilized and other similar information.</p>
-<p>&nbsp;</p>
+  <h3>2. Información que podemos tratar</h3>
+  <ul>
+    <li><strong>Datos de cuenta:</strong> correo electrónico, nombre de usuario, contraseña almacenada mediante mecanismos de protección, idioma, fechas de registro y actividad.</li>
+    <li><strong>Datos de perfil:</strong> nombre visible, edad o fecha de nacimiento, género, preferencias, descripción, ciudad, ubicación aproximada u otros campos que decidas completar.</li>
+    <li><strong>Contenido:</strong> fotografías, información de perfil y demás material que subas.</li>
+    <li><strong>Comunicaciones:</strong> mensajes y datos técnicos necesarios para prestar las funciones de comunicación disponibles en la plataforma.</li>
+    <li><strong>Seguridad y moderación:</strong> bloqueos, reportes, decisiones de moderación, registros de acceso, dirección IP, información del navegador y señales razonablemente necesarias para prevenir abuso, fraude o acceso no autorizado.</li>
+    <li><strong>Soporte y contacto:</strong> contenido de solicitudes enviadas al equipo de soporte o moderación.</li>
+    <li><strong>Pagos:</strong> si en el futuro habilitamos funciones de pago, podremos tratar referencias de transacción y estado del pago. Los datos completos de tarjeta podrán ser gestionados directamente por el proveedor de pago correspondiente cuando proceda.</li>
+  </ul>
 
-<p><strong>Web browser cookies</strong></p>
-<p>Our Site may use "cookies" to enhance User experience. User's web browser places cookies on their hard drive for record-keeping purposes and sometimes to track information about them. User may choose to set their web browser to refuse cookies, or to alert you when cookies are being sent. If they do so, note that some parts of the Site may not function properly.</p>
-<p>&nbsp;</p>
+  <h3>3. Para qué utilizamos la información</h3>
+  <p>Podemos utilizar la información para crear y administrar cuentas; mostrar perfiles según la configuración del usuario; permitir descubrimiento y comunicación; revisar fotografías; procesar bloqueos y reportes; prevenir fraude, spam, acoso y accesos no autorizados; enviar avisos operativos o de seguridad; atender soporte; mantener y diagnosticar el servicio; y cumplir obligaciones legales.</p>
 
-<p><strong>How we use collected information</strong></p>
-<p>{site_name} collects and uses Users personal information for the following purposes:</p>
-<ul>
-<li><em>- To personalize user experience</em><br />
-    We may use information in the aggregate to understand how our Users as a group use the services and resources provided on our Site.</li>
-<li><em>- To improve our Site</em><br />
-    We continually strive to improve our website offerings based on the information and feedback we receive from you.</li>
-<li><em>- To improve customer service</em><br />
-    Your information helps us to more effectively respond to your customer service requests and support needs.</li>
-<li><em>- To send periodic emails</em><br />
-The email address Users provide for order processing, will only be used to send them information and updates pertaining to their order. It may also be used to respond to their inquiries, and/or other requests or questions. If User decides to opt-in to our mailing list, they will receive emails that may include company news, updates, related product or service information, etc. If at any time the User would like to unsubscribe from receiving future emails, we include detailed unsubscribe instructions at the bottom of each email or User may contact us via our Site.</li>
-</ul>
-<p>&nbsp;</p>
+  <h3>4. Visibilidad de perfiles</h3>
+  <p>Parte de la información que añades al perfil está destinada a ser visible para otros usuarios según las funciones y configuraciones disponibles. No publiques en tu perfil información que no quieras que otros miembros conozcan. Los perfiles desactivados, suspendidos o pendientes de eliminación pueden dejar de mostrarse en las áreas públicas de descubrimiento.</p>
 
-<p><strong>How we protect your information</strong></p>
-<p>We adopt appropriate data collection, storage and processing practices and security measures to protect against unauthorized access, alteration, disclosure or destruction of your personal information, username, password, transaction information and data stored on our Site.</p>
-<p>&nbsp;</p>
+  <h3>5. Mensajes, reportes y moderación</h3>
+  <p>Las comunicaciones y los datos asociados pueden ser procesados para prestar la mensajería, investigar reportes, aplicar bloqueos, proteger a los usuarios y hacer cumplir las reglas del servicio. No afirmamos que los mensajes sean comunicaciones fuera del alcance operativo del sistema cuando la función utilizada requiera almacenamiento o procesamiento del servidor.</p>
 
-<p><strong>Sharing your personal information</strong></p>
-<p>We do not sell, trade, or rent Users personal identification information to others. We may share generic aggregated demographic information not linked to any personal identification information regarding visitors and users with our business partners, trusted affiliates and advertisers for the purposes outlined above.We may use third party service providers to help us operate our business and the Site or administer activities on our behalf, such as sending out newsletters or surveys. We may share your information with these third parties for those limited purposes provided that you have given us your permission.</p>
-<p>&nbsp;</p>
+  <h3>6. Cookies y datos técnicos</h3>
+  <p>Podemos utilizar cookies o tecnologías equivalentes para mantener sesiones, recordar preferencias, proteger formularios, detectar abuso y medir el funcionamiento del sitio. Algunas cookies son necesarias para iniciar sesión y utilizar funciones esenciales. Si se incorporan servicios externos de analítica o publicidad, su uso deberá reflejarse en esta política y en los controles de consentimiento que correspondan antes de activarlos.</p>
 
-<p><strong>Third party websites</strong></p>
-<p>Users may find advertising or other content on our Site that link to the sites and services of our partners, suppliers, advertisers, sponsors, licensors and other third parties. We do not control the content or links that appear on these sites and are not responsible for the practices employed by websites linked to or from our Site. In addition, these sites or services, including their content and links, may be constantly changing. These sites and services may have their own privacy policies and customer service policies. Browsing and interaction on any other website, including websites which have a link to our Site, is subject to that website's own terms and policies.</p>
-<p>&nbsp;</p>
+  <h3>7. Proveedores y destinatarios</h3>
+  <p>Podemos utilizar proveedores técnicos para alojamiento, base de datos, almacenamiento, correo electrónico, seguridad, monitorización o pagos. Solo deben recibir la información necesaria para prestar su función y estar sujetos a las obligaciones contractuales o legales aplicables. No vendemos listas de datos personales de los usuarios a anunciantes.</p>
+  <p>También podremos conservar o comunicar información cuando exista una obligación legal válida, una solicitud de autoridad competente o una necesidad razonable de proteger la seguridad, los derechos o la integridad de usuarios y del servicio.</p>
 
-<p><strong>Advertising</strong></p>
-<p>Ads appearing on our site may be delivered to Users by advertising partners, who may set cookies. These cookies allow the ad server to recognize your computer each time they send you an online advertisement to compile non personal identification information about you or others who use your computer. This information allows ad networks to, among other things, deliver targeted advertisements that they believe will be of most interest to you. This privacy policy does not cover the use of cookies by any advertisers.</p>
-<p>&nbsp;</p>
+  <h3>8. Conservación, inactividad y eliminación</h3>
+  <p>Conservamos información mientras la cuenta esté activa o mientras sea razonablemente necesaria para prestar el servicio, seguridad, prevención de fraude, resolución de disputas y cumplimiento.</p>
+  <p>Cuando solicitas voluntariamente eliminar tu cuenta, esta se desactiva y entra en un <strong>periodo de recuperación de 90 días</strong>. Durante ese plazo puedes utilizar el enlace seguro enviado a tu correo para reactivarla. Al vencer el plazo, la eliminación programada puede ejecutarse. Determinados registros mínimos pueden conservarse durante más tiempo cuando sea necesario por seguridad, prevención de abuso, obligaciones legales o copias de respaldo con ciclos de eliminación propios.</p>
+  <p>Una cuenta que alcance 90 días sin actividad puede ser desactivada después de avisos previos. La inactividad, por sí sola, no causa la eliminación automática de la cuenta.</p>
 
-<p><strong>Google Adsense</strong></p>
-<p>Some of the ads may be served by Google. Google's use of the DART cookie enables it to serve ads to Users based on their visit to our Site and other sites on the Internet. DART uses "non personally identifiable information" and does NOT track personal information about you, such as your name, email address, physical address, etc. You may opt out of the use of the DART cookie by visiting the Google ad and content network privacy policy at <a href="https://www.google.com/policies/technologies/ads/">https://www.google.com/policies/technologies/ads/</a></p>
-<p>&nbsp;</p>
+  <h3>9. Seguridad</h3>
+  <p>Aplicamos medidas técnicas y organizativas razonables para reducir riesgos de acceso no autorizado, alteración, pérdida o divulgación. Ningún servicio conectado a Internet puede garantizar seguridad absoluta. Mantén una contraseña única, no compartas códigos de acceso y avísanos si sospechas de una intrusión.</p>
 
-<p><strong>Compliance with children's online privacy protection act</strong></p>
-<p>Protecting the privacy of the very young is especially important. For that reason, we never collect or maintain information at our Site from those we actually know are under 13, and no part of our website is structured to attract anyone under 13.</p>
-<p>&nbsp;</p>
+  <h3>10. Tus opciones y derechos</h3>
+  <p>Puedes actualizar distintos datos desde tu cuenta, utilizar las funciones de bloqueo y reporte, solicitar la eliminación de tu cuenta y contactar con nosotros para ejercer los derechos que reconozca la legislación aplicable, incluidos, cuando correspondan, acceso, rectificación, actualización, oposición o eliminación. Podremos solicitar información suficiente para verificar la identidad antes de atender una solicitud sensible.</p>
 
-<p><strong>Changes to this privacy policy</strong></p>
-<p>{site_name} has the discretion to update this privacy policy at any time. When we do, we will revise the updated date at the bottom of this page. We encourage Users to frequently check this page for any changes to stay informed about how we are helping to protect the personal information we collect. You acknowledge and agree that it is your responsibility to review this privacy policy periodically and become aware of modifications.</p>
-<p>&nbsp;</p>
+  <h3>11. Enlaces y servicios externos</h3>
+  <p>El sitio puede contener enlaces a servicios de terceros. Sus prácticas de privacidad se rigen por sus propias políticas. Revisa esas políticas antes de facilitarles información.</p>
 
-<p><strong>Your acceptance of these terms</strong></p>
-<p>By using this Site, you signify your acceptance of this policy and <a href="{{ $design->url('page','main','terms') }}">terms of service</a>.<br />
-If you do not agree to this policy, please do not use our Site. Your continued use of the Site following the posting of changes to this policy will be deemed your acceptance of those changes.</p>
-<p>&nbsp;</p>
+  <h3>12. Cambios en esta política</h3>
+  <p>Podemos actualizar esta política cuando cambien las funciones, proveedores, riesgos u obligaciones del servicio. Cuando los cambios sean materiales, procuraremos comunicarlos de forma razonable y actualizaremos la fecha indicada en esta página.</p>
 
-<p><strong>Contact us</strong></p>
-<p>If you have any questions about this policy<br />
-privacy practices of this site, please contact us via our &quot;<a href="{{ $design->url('contact','contact','index') }}" title="Contact Us">contact form</a>&quot;.</p>
-<p>&nbsp;</p>
-<p class="small text-muted">Last updated on <em>{website_creation_date}.</em></p>
+  <h3>13. Contacto</h3>
+  <p>Para preguntas de privacidad, solicitudes relacionadas con tus datos o problemas de seguridad, utiliza nuestro <a href="{{ $design->url('contact','contact','index') }}">formulario de contacto</a>.</p>
 </div>

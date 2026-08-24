@@ -1,0 +1,166 @@
+name: DeseoCerca Production Cutover
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Production operation
+        required: true
+        default: prepare
+        type: choice
+        options:
+          - prepare
+          - verify
+          - rollback
+      release_sha:
+        description: Exact merged 18.x commit SHA (required for prepare/verify)
+        required: false
+        type: string
+      restore_staging_site:
+        description: "Rollback only: also restore the previous staging site address"
+        required: true
+        default: false
+        type: boolean
+      confirmation:
+        description: Type the exact confirmation phrase required by the selected action
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deseocerca-production-cutover
+  cancel-in-progress: false
+
+jobs:
+  cutover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      HOST: ${{ secrets.DESEOCERCA_STAGING_HOST }}
+      SSH_USER: ${{ secrets.DESEOCERCA_STAGING_USER }}
+      SSH_PORT: ${{ secrets.DESEOCERCA_STAGING_PORT }}
+      SSH_KEY: ${{ secrets.DESEOCERCA_STAGING_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DESEOCERCA_STAGING_KNOWN_HOSTS }}
+      REMOTE_DIR: /opt/deseocerca-staging
+      RELEASE_SHA: ${{ inputs.release_sha }}
+      ACTION: ${{ inputs.action }}
+      CONFIRMATION: ${{ inputs.confirmation }}
+      RESTORE_STAGING_SITE: ${{ inputs.restore_staging_site }}
+      STAGING_PUBLIC_HOST: staging.deseocerca.com
+      PRODUCTION_PUBLIC_HOST: deseocerca.com
+      PRODUCTION_WWW_HOST: www.deseocerca.com
+
+    steps:
+      - name: Validate cutover request
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(HOST SSH_USER SSH_KEY)
+          for name in "${required[@]}"; do
+            test -n "${!name:-}" || { echo "Missing required secret: $name"; exit 1; }
+          done
+          port="${SSH_PORT:-22}"
+          [[ "$port" =~ ^[0-9]+$ ]] && [ "$port" -ge 1 ] && [ "$port" -le 65535 ] || { echo "SSH_PORT is invalid."; exit 1; }
+          [[ "$SSH_USER" =~ ^[a-z_][a-z0-9_-]*\$?$ ]] || { echo "SSH_USER contains unsupported characters."; exit 1; }
+          case "$ACTION" in
+            prepare)
+              expected='PROMOTE_DESEOCERCA'
+              [[ "$RELEASE_SHA" =~ ^[a-f0-9]{40}$ ]] || { echo "prepare requires an exact release_sha."; exit 1; }
+              ;;
+            verify)
+              expected='VERIFY_DESEOCERCA'
+              [[ "$RELEASE_SHA" =~ ^[a-f0-9]{40}$ ]] || { echo "verify requires an exact release_sha."; exit 1; }
+              ;;
+            rollback)
+              expected='ROLLBACK_DESEOCERCA'
+              ;;
+            *) echo "Unsupported action."; exit 1 ;;
+          esac
+          [ "$CONFIRMATION" = "$expected" ] || { echo "Confirmation phrase is incorrect for action '$ACTION'."; exit 1; }
+
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          port="${SSH_PORT:-22}"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deseocerca_production
+          chmod 600 ~/.ssh/deseocerca_production
+          if [ -n "${KNOWN_HOSTS:-}" ]; then
+            printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            for attempt in {1..10}; do
+              if ssh-keyscan -T 5 -p "$port" -H "$HOST" > ~/.ssh/known_hosts 2>/dev/null; then break; fi
+              [ "$attempt" -lt 10 ] || { echo "Unable to read the VM SSH host key."; exit 1; }
+              sleep 6
+            done
+          fi
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Require exact release candidate and strict gate on staging
+        if: ${{ inputs.action == 'prepare' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          port="${SSH_PORT:-22}"
+          remote_sha="$(ssh -i ~/.ssh/deseocerca_production -p "$port" "$SSH_USER@$HOST" "cd '$REMOTE_DIR' && git rev-parse HEAD")"
+          [ "$remote_sha" = "$RELEASE_SHA" ] || {
+            echo "The VM is running $remote_sha, not release candidate $RELEASE_SHA."
+            echo "Deploy the merged 18.x release to staging and complete its acceptance first."
+            exit 1
+          }
+          ssh -i ~/.ssh/deseocerca_production -p "$port" "$SSH_USER@$HOST" \
+            "sudo -n /bin/bash '$REMOTE_DIR/deploy/deseocerca/root-ops.sh' backup"
+          ssh -i ~/.ssh/deseocerca_production -p "$port" "$SSH_USER@$HOST" \
+            "sudo -n /bin/bash '$REMOTE_DIR/deploy/deseocerca/root-ops.sh' gate '$STAGING_PUBLIC_HOST' production"
+
+      - name: Prepare production on the validated VM
+        if: ${{ inputs.action == 'prepare' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          port="${SSH_PORT:-22}"
+          ssh -i ~/.ssh/deseocerca_production -p "$port" "$SSH_USER@$HOST" \
+            "sudo -n /bin/bash '$REMOTE_DIR/deploy/deseocerca/root-ops.sh' promote '$RELEASE_SHA'"
+          echo "Production stack is internally prepared."
+          echo "Next external step: point deseocerca.com and www.deseocerca.com to this VM, then run action=verify."
+
+      - name: Verify public production release
+        if: ${{ inputs.action == 'verify' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          port="${SSH_PORT:-22}"
+          remote_sha="$(ssh -i ~/.ssh/deseocerca_production -p "$port" "$SSH_USER@$HOST" "cd '$REMOTE_DIR' && git rev-parse HEAD")"
+          [ "$remote_sha" = "$RELEASE_SHA" ] || { echo "Remote revision $remote_sha does not match requested release $RELEASE_SHA."; exit 1; }
+          ssh -i ~/.ssh/deseocerca_production -p "$port" "$SSH_USER@$HOST" \
+            "sudo -n /bin/bash '$REMOTE_DIR/deploy/deseocerca/root-ops.sh' prepared-check '$RELEASE_SHA'"
+          ssh -i ~/.ssh/deseocerca_production -p "$port" "$SSH_USER@$HOST" \
+            "sudo -n /bin/bash '$REMOTE_DIR/deploy/deseocerca/root-ops.sh' backup"
+          ssh -i ~/.ssh/deseocerca_production -p "$port" "$SSH_USER@$HOST" \
+            "sudo -n /bin/bash '$REMOTE_DIR/deploy/deseocerca/root-ops.sh' gate '$PRODUCTION_PUBLIC_HOST' production"
+          ssh -i ~/.ssh/deseocerca_production -p "$port" "$SSH_USER@$HOST" \
+            "python3 '$REMOTE_DIR/deploy/deseocerca/public-smoke.py' '$PRODUCTION_WWW_HOST'"
+          ssh -i ~/.ssh/deseocerca_production -p "$port" "$SSH_USER@$HOST" \
+            "sudo -n /bin/bash '$REMOTE_DIR/deploy/deseocerca/root-ops.sh' mark-verified '$RELEASE_SHA'"
+
+      - name: Roll back code
+        if: ${{ inputs.action == 'rollback' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          port="${SSH_PORT:-22}"
+          if [ "$RESTORE_STAGING_SITE" = 'true' ]; then
+            ssh -i ~/.ssh/deseocerca_production -p "$port" "$SSH_USER@$HOST" \
+              "sudo -n /bin/bash '$REMOTE_DIR/deploy/deseocerca/root-ops.sh' rollback --restore-site"
+          else
+            ssh -i ~/.ssh/deseocerca_production -p "$port" "$SSH_USER@$HOST" \
+              "sudo -n /bin/bash '$REMOTE_DIR/deploy/deseocerca/root-ops.sh' rollback"
+          fi
+
+      - name: Remove temporary SSH key
+        if: always()
+        shell: bash
+        run: rm -f ~/.ssh/deseocerca_production

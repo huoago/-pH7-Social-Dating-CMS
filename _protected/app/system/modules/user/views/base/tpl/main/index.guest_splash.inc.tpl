@@ -1,32 +1,50 @@
 {if $is_bg_video}
-    {* If Splash Video Background is enabled in the admin panel *}
     {manual_include 'splash_video_background.inc.tpl'}
 {/if}
 
-<div class="col-md-8 login_block animated fadeInDown">
-    {{ LoginSplashForm::display() }}
-</div>
-
-{if !$is_mobile}
-    <div class="pull-left col-lg-7 col-md-8 col-sm-7 col-xs-11 animated fadeInLeft">
-        {manual_include 'user_promo_block.inc.tpl'}
-    </div>
-{/if}
-
-<div class="pull-left col-lg-4 col-md-4 col-sm-5 col-xs-11 animated fadeInRight">
-    <h1 class="red3 italic underline">{headline}</h1>
-
-    {* For small devices, the following will be activated through /templates/themes/base/css/splash.css *}
-    <div class="login_button hidden center">
-        <a href="{{ $design->url('user','main','login') }}" class="btn btn-primary btn-lg">
-            <strong>{lang 'Sign in'}</strong>
+<section class="dc-splash">
+    <div class="dc-splash-topbar">
+        <div class="dc-brand-lockup">
+            <strong>DeseoCerca</strong>
+            <span>Solo adultos 18+</span>
+        </div>
+        <a href="{{ $design->url('user','main','login') }}" class="btn btn-default dc-login-link">
+            Iniciar sesión
         </a>
     </div>
 
-    {{ JoinForm::step1() }}
+    <div class="dc-splash-grid">
+        <div class="dc-splash-hero animated fadeInLeft">
+            <div class="dc-eyebrow">DESCUBRE · CONECTA · DECIDE TÚ</div>
+            <h1>Personas cerca de ti, sin complicaciones.</h1>
+            <p class="dc-hero-copy">
+                Explora perfiles de adultos en Perú, encuentra personas por ubicación y empieza una conversación privada cuando quieras.
+            </p>
 
-    {if $is_mobile}
-        <div class="s_tMarg"></div>
-        {manual_include 'user_promo_block.inc.tpl'}
-    {/if}
-</div>
+            <div class="dc-trust-row" aria-label="Funciones de seguridad">
+                <span>18+ obligatorio</span>
+                <span>Perfiles moderados</span>
+                <span>Bloqueo y denuncia</span>
+                <span>Privacidad primero</span>
+            </div>
+
+            {manual_include 'user_promo_block.inc.tpl'}
+        </div>
+
+        <aside class="dc-signup-card animated fadeInRight">
+            <div class="dc-signup-heading">
+                <span class="dc-step-label">CREA TU PERFIL</span>
+                <h2>Empieza gratis</h2>
+                <p>Regístrate para descubrir personas y perfiles cerca de ti.</p>
+            </div>
+            {{ JoinForm::step1() }}
+            <p class="dc-signup-note">
+                Al registrarte confirmas que tienes 18 años o más y aceptas las normas de la comunidad.
+            </p>
+        </aside>
+    </div>
+
+    <div class="dc-existing-login animated fadeInDown">
+        {{ LoginSplashForm::display() }}
+    </div>
+</section>

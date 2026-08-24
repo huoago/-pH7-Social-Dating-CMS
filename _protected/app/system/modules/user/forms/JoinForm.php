@@ -73,8 +73,19 @@ class JoinForm
             $oForm->addElement(new HTMLExternal('<span class="input_error ccaptcha"></span>'));
         }
 
+        $oForm->addElement(
+            new Checkbox(
+                '18+',
+                'adult_confirm',
+                [1 => '<strong>Confirmo que tengo 18 años o más.</strong>'],
+                ['id' => 'adult_confirm', 'required' => 1]
+            )
+        );
+        $oForm->addElement(new HTMLExternal('<span class="input_error adult_confirm-0"></span>'));
+
         $oForm->addElement(new Checkbox(t('Terms of Service'), 'terms', [1 => '<em>' . t('I have read and agree to the %0%.', '<a href="' . Uri::get('page', 'main', 'terms') . '" rel="nofollow" target="_blank">' . t('Terms of Service') . '</a>') . '</em>'], ['id' => 'terms', 'onblur' => 'CValid(this.checked, this.id)', 'required' => 1]));
         $oForm->addElement(new HTMLExternal('<span class="input_error terms-0"></span>'));
+        $oForm->addElement(new HTMLExternal('<p class="dc-signup-policy-note">DeseoCerca es una comunidad para adultos. No se permiten menores, explotación, contenido íntimo no consentido ni intermediación de servicios sexuales de pago.</p>'));
         $oForm->addElement(new Button(t('Join for free!'), 'submit', ['icon' => 'heart']));
 
         // JavaScript Files
@@ -101,6 +112,11 @@ class JoinForm
 
             Header::redirect();
         }
+
+        $sDetectedCountry = Country::fixCode(Geo::getCountryCode());
+        $sDefaultCountry = !empty($sDetectedCountry) ? $sDetectedCountry : 'PE';
+        $sDetectedCity = trim((string)Geo::getCity());
+        $sDefaultCity = !empty($sDetectedCity) ? $sDetectedCity : ($sDefaultCountry === 'PE' ? 'Lima' : '');
 
         $oForm = new \PFBC\Form('form_join_user2');
         $oForm->configure(['action' => '']);
@@ -142,7 +158,7 @@ class JoinForm
                 ['' => t('')] + Form::getCountryValues(),
                 [
                     'id' => 'str_country',
-                    'value' => Country::fixCode(Geo::getCountryCode()),
+                    'value' => $sDefaultCountry,
                     'required' => 1
                 ]
             )
@@ -154,7 +170,7 @@ class JoinForm
                 'city',
                 [
                     'id' => 'str_city',
-                    'value' => Geo::getCity(),
+                    'value' => $sDefaultCity,
                     'onblur' => 'CValid(this.value,this.id,2,150)',
                     'description' => t('Select the city where you live/where you want to meet people.'),
                     'validation' => new Str(2, 150),
@@ -178,6 +194,7 @@ class JoinForm
         );
         $oForm->addElement(new HTMLExternal('<span class="input_error str_zip_code"></span>'));
 
+        $oForm->addElement(new HTMLExternal('<p class="dc-signup-policy-note">Usamos ciudad y zona para ayudarte a descubrir perfiles. No publiques tu dirección exacta en el perfil.</p>'));
         $oForm->addElement(new Button(t('Next'), 'submit', ['icon' => 'seek-next']));
         $oForm->addElement(
             new HTMLExternal(
@@ -263,6 +280,7 @@ class JoinForm
         $oForm->addElement(new Hidden('submit_join_user4', 'form_join_user4'));
         $oForm->addElement(new Token('join4'));
         $oForm->addElement(new File(t('Your Profile Photo'), 'avatar', $aAvatarFieldOption));
+        $oForm->addElement(new HTMLExternal('<p class="dc-signup-policy-note">La foto puede quedar pendiente de aprobación antes de mostrarse públicamente.</p>'));
         $oForm->addElement(new Button(t('Add My Photo')));
 
         if (!$bIsAvatarRequired) {

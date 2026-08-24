@@ -26,3 +26,95 @@ textarea#backup {
     width: 98% !important;
     min-height: 30rem !important;
 }
+
+/* DeseoCerca moderation dashboard */
+.dc-moderation-dashboard {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 12px 0 40px;
+}
+
+.dc-moderation-dashboard > header {
+    max-width: 820px;
+    margin-bottom: 24px;
+}
+
+.dc-moderation-dashboard > header h1 {
+    margin: 6px 0 10px;
+    font-size: 36px;
+}
+
+.dc-moderation-dashboard > header p,
+.dc-moderation-card span,
+.dc-moderation-priority li {
+    line-height: 1.6;
+}
+
+.dc-eyebrow {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: #666;
+}
+
+.dc-moderation-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.dc-moderation-card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 120px;
+    padding: 18px;
+    border: 1px solid #d8d8df;
+    border-radius: 14px;
+    background: #fff;
+    text-decoration: none;
+    box-shadow: 0 8px 22px rgba(0, 0, 0, .04);
+}
+
+.dc-moderation-card:hover,
+.dc-moderation-card:focus {
+    border-color: #ef4f7a;
+    text-decoration: none;
+}
+
+.dc-moderation-card strong {
+    font-size: 17px;
+}
+
+.dc-moderation-card span {
+    color: #666;
+}
+
+.dc-moderation-priority {
+    margin-top: 22px;
+    padding: 20px;
+    border: 1px solid #d8d8df;
+    border-radius: 14px;
+    background: #fff;
+}
+
+.dc-moderation-priority h2 {
+    margin-top: 0;
+}
+
+.dc-moderation-priority li {
+    margin: 8px 0;
+}
+
+@media (max-width: 900px) {
+    .dc-moderation-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 640px) {
+    .dc-moderation-grid {
+        grid-template-columns: 1fr;
+    }
+}

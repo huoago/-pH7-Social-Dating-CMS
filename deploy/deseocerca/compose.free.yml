@@ -1,0 +1,91 @@
+services:
+  db-tls:
+    image: haproxy:3.2-alpine
+    restart: unless-stopped
+    environment:
+      TIDB_HOST: ${TIDB_HOST:?TIDB_HOST is required}
+    volumes:
+      - ./haproxy-tidb.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    healthcheck:
+      test: ["CMD-SHELL", "haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg >/dev/null 2>&1 && nc -z 127.0.0.1 3306"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  app:
+    image: ${DESEOCERCA_APP_IMAGE:-deseocerca-free:current}
+    restart: unless-stopped
+    depends_on:
+      db-tls:
+        condition: service_healthy
+    environment:
+      TZ: America/Lima
+      PH7_TRUST_PROXY_HEADERS: "1"
+      PH7_CANONICAL_HOST: ${PH7_CANONICAL_HOST:-}
+      PH7_CANONICAL_SCHEME: ${PH7_CANONICAL_SCHEME:-https}
+    volumes:
+      - public_data:/var/www/html/data
+      - protected_data:/var/www/html/_protected/data
+      - module_repo:/var/www/html/_repository/module
+      - runtime_config:/var/lib/deseocerca/runtime
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    environment:
+      STAGING_SITE_ADDRESS: ${STAGING_SITE_ADDRESS:-:80}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile.staging:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  lifecycle:
+    image: ${DESEOCERCA_APP_IMAGE:-deseocerca-free:current}
+    restart: unless-stopped
+    depends_on:
+      db-tls:
+        condition: service_healthy
+      app:
+        condition: service_started
+    environment:
+      TZ: America/Lima
+      PH7_CANONICAL_HOST: ${PH7_CANONICAL_HOST:-}
+      PH7_CANONICAL_SCHEME: ${PH7_CANONICAL_SCHEME:-https}
+    volumes:
+      - public_data:/var/www/html/data
+      - protected_data:/var/www/html/_protected/data
+      - module_repo:/var/www/html/_repository/module
+      - runtime_config:/var/lib/deseocerca/runtime
+    entrypoint: ["/bin/sh", "-lc"]
+    command:
+      - |
+        while :; do
+          if [ -s /var/www/html/_constants.php ]; then
+            php deploy/deseocerca/account-lifecycle.php || true
+          fi
+          sleep 86400
+        done
+
+  db-client:
+    image: mysql:8.0
+    profiles: ["tools"]
+    environment:
+      MYSQL_PWD: ${TIDB_PASSWORD:?TIDB_PASSWORD is required}
+    depends_on:
+      db-tls:
+        condition: service_healthy
+
+volumes:
+  public_data:
+  protected_data:
+  module_repo:
+  runtime_config:
+  caddy_data:
+  caddy_config:

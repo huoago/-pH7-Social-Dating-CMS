@@ -1,0 +1,127 @@
+name: Validate DeseoCerca Free Tier
+
+on:
+  push:
+    branches:
+      - 18.x
+  pull_request:
+    branches:
+      - 18.x
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  free-tier:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate free-tier deployment and release script syntax
+        run: |
+          bash -n deploy/deseocerca/google-free-vm-bootstrap.sh
+          bash -n deploy/deseocerca/prepare-first-install-free.sh
+          bash -n deploy/deseocerca/apply-bootstrap-free.sh
+          bash -n deploy/deseocerca/backup-free.sh
+          bash -n deploy/deseocerca/restore-free.sh
+          bash -n deploy/deseocerca/root-ops.sh
+          bash -n deploy/deseocerca/host-preflight.sh
+          bash -n deploy/deseocerca/release-gate.sh
+          bash -n deploy/deseocerca/promote-production.sh
+          bash -n deploy/deseocerca/rollback-production.sh
+          python3 -m py_compile deploy/deseocerca/automate-first-install.py
+          python3 -m py_compile deploy/deseocerca/update-env.py
+          python3 -m py_compile deploy/deseocerca/record-production-approval.py
+
+      - name: Validate TiDB-compatible SQL baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          sql='_install/data/sql/MySQL/pH7_Core.sql'
+          if grep -Eiq '\bCREATE[[:space:]]+(TRIGGER|PROCEDURE|FUNCTION|EVENT)\b|\bSPATIAL\b' "$sql"; then
+            echo "The pH7 schema contains a TiDB-incompatible trigger/procedure/function/event/spatial feature."
+            exit 1
+          fi
+          expected_fulltext='^[[:space:]]*FULLTEXT[[:space:]]+KEY[[:space:]]+logError[[:space:]]*\(logError\)[[:space:]]*$'
+          fulltext_total="$(grep -Eic '^[[:space:]]*FULLTEXT[[:space:]]+(KEY|INDEX)\b' "$sql" || true)"
+          if [ "$fulltext_total" -ne 1 ] || ! grep -Eq "$expected_fulltext" "$sql"; then
+            echo "Unexpected FULLTEXT schema change. Free Tier deployment only permits the existing ph7_log_error.logError index."
+            exit 1
+          fi
+
+      - name: Validate TiDB TLS proxy configuration
+        run: |
+          docker run --rm \
+            -e TIDB_HOST=gateway01.us-west-2.prod.aws.tidbcloud.com \
+            -v "$PWD/deploy/deseocerca/haproxy-tidb.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro" \
+            haproxy:3.2-alpine \
+            haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg
+
+      - name: Validate free-tier Compose configuration
+        env:
+          DESEOCERCA_APP_IMAGE: deseocerca-free:ci
+          STAGING_SITE_ADDRESS: staging.deseocerca.com
+          PH7_CANONICAL_HOST: staging.deseocerca.com
+          PH7_CANONICAL_SCHEME: https
+          TIDB_HOST: gateway01.us-west-2.prod.aws.tidbcloud.com
+          TIDB_USERNAME: ci.root
+          TIDB_PASSWORD: ci-not-a-real-password
+          TIDB_DATABASE: deseocerca
+        run: |
+          docker compose -f deploy/deseocerca/compose.free.yml config --quiet
+          services="$(docker compose -f deploy/deseocerca/compose.free.yml config --services)"
+          for required in db-tls app caddy lifecycle; do
+            grep -qx "$required" <<< "$services" || { echo "Missing free-tier service: $required"; exit 1; }
+          done
+          if grep -qx db <<< "$services"; then
+            echo "Free-tier Compose must not start a local MySQL database."
+            exit 1
+          fi
+          rendered="$(docker compose -f deploy/deseocerca/compose.free.yml config)"
+          grep -Fq 'PH7_CANONICAL_HOST: staging.deseocerca.com' <<< "$rendered"
+          grep -Fq 'PH7_CANONICAL_SCHEME: https' <<< "$rendered"
+          grep -Fq 'PH7_TRUST_PROXY_HEADERS: "1"' <<< "$rendered"
+
+      - name: Verify MySQL client tooling used by backup and restore
+        run: |
+          docker run --rm mysql:8.0 mysqldump --version
+          docker run --rm mysql:8.0 mysql --version
+
+      - name: Validate safe environment overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp)"
+          trap 'rm -f "$tmp"' EXIT
+          cat > "$tmp" <<'EOF'
+          DESEOCERCA_APP_IMAGE=deseocerca-free:current
+          STAGING_SITE_ADDRESS=:80
+          PH7_CANONICAL_HOST=
+          PH7_CANONICAL_SCHEME=https
+          TIDB_HOST=gateway01.us-west-2.prod.aws.tidbcloud.com
+          TIDB_USERNAME=ci.root
+          TIDB_PASSWORD=ci-secret
+          TIDB_DATABASE=deseocerca
+          PH7_MAILER_DSN=
+          EOF
+          chmod 600 "$tmp"
+          printf '%s\n' '{"STAGING_SITE_ADDRESS":"staging.deseocerca.com","PH7_CANONICAL_HOST":"staging.deseocerca.com","PH7_CANONICAL_SCHEME":"https","DESEOCERCA_APP_IMAGE":"deseocerca-free:ci"}' \
+            | python3 deploy/deseocerca/update-env.py "$tmp"
+          grep -Fxq 'STAGING_SITE_ADDRESS=staging.deseocerca.com' "$tmp"
+          grep -Fxq 'PH7_CANONICAL_HOST=staging.deseocerca.com' "$tmp"
+          grep -Fxq 'DESEOCERCA_APP_IMAGE=deseocerca-free:ci' "$tmp"
+          grep -Fxq 'TIDB_PASSWORD=ci-secret' "$tmp"
+          [ "$(stat -c '%a' "$tmp")" = 600 ]
+
+      - name: Validate constrained root operations surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'Allowed actions: auto-install, backup, gate, promote, rollback, record-approval, prepared-check, mark-verified' deploy/deseocerca/root-ops.sh
+          ! grep -Eq 'NOPASSWD: ALL|/usr/bin/systemctl \*' deploy/deseocerca/google-free-vm-bootstrap.sh
+          grep -Fq 'root-ops.sh *' deploy/deseocerca/google-free-vm-bootstrap.sh
+          grep -Fq 'restore-free.sh *' deploy/deseocerca/google-free-vm-bootstrap.sh

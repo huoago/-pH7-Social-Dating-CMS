@@ -1,0 +1,116 @@
+name: DeseoCerca Production Approval
+
+on:
+  workflow_dispatch:
+    inputs:
+      approval_type:
+        description: Gate being explicitly approved
+        required: true
+        type: choice
+        options:
+          - legal
+          - e2e
+          - restore-drill
+          - offsite-backup
+      approved_by:
+        description: Person or role responsible for this approval
+        required: true
+        type: string
+      evidence:
+        description: Evidence/reference for the completed review or test
+        required: true
+        type: string
+      confirmation:
+        description: Type APPROVE_DESEOCERCA_PRODUCTION_GATE
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deseocerca-production-approval
+  cancel-in-progress: false
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.DESEOCERCA_STAGING_HOST }}
+      SSH_USER: ${{ secrets.DESEOCERCA_STAGING_USER }}
+      SSH_PORT: ${{ secrets.DESEOCERCA_STAGING_PORT }}
+      SSH_KEY: ${{ secrets.DESEOCERCA_STAGING_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DESEOCERCA_STAGING_KNOWN_HOSTS }}
+      REMOTE_DIR: /opt/deseocerca-staging
+      APPROVAL_TYPE: ${{ inputs.approval_type }}
+      APPROVED_BY: ${{ inputs.approved_by }}
+      EVIDENCE: ${{ inputs.evidence }}
+      CONFIRMATION: ${{ inputs.confirmation }}
+
+    steps:
+      - name: Validate explicit approval
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$CONFIRMATION" = 'APPROVE_DESEOCERCA_PRODUCTION_GATE' ] || {
+            echo "Approval confirmation phrase is incorrect."
+            exit 1
+          }
+          required=(HOST SSH_USER SSH_KEY APPROVED_BY EVIDENCE)
+          for name in "${required[@]}"; do
+            test -n "${!name:-}" || { echo "Missing required value: $name"; exit 1; }
+          done
+          [[ "$SSH_USER" =~ ^[a-z_][a-z0-9_-]*\$?$ ]] || { echo "SSH_USER contains unsupported characters."; exit 1; }
+          port="${SSH_PORT:-22}"
+          [[ "$port" =~ ^[0-9]+$ ]] && [ "$port" -ge 1 ] && [ "$port" -le 65535 ] || { echo "SSH_PORT is invalid."; exit 1; }
+
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          port="${SSH_PORT:-22}"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deseocerca_approval
+          chmod 600 ~/.ssh/deseocerca_approval
+          if [ -n "${KNOWN_HOSTS:-}" ]; then
+            printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -T 10 -p "$port" -H "$HOST" > ~/.ssh/known_hosts
+          fi
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Require deployed revision to belong to 18.x
+        shell: bash
+        run: |
+          set -euo pipefail
+          port="${SSH_PORT:-22}"
+          ssh -i ~/.ssh/deseocerca_approval -p "$port" "$SSH_USER@$HOST" \
+            "set -e; cd '$REMOTE_DIR'; \
+             if [ -f .git/shallow ]; then git fetch --unshallow origin; fi; \
+             git fetch --prune origin '+refs/heads/18.x:refs/remotes/origin/18.x'; \
+             git merge-base --is-ancestor HEAD origin/18.x"
+
+      - name: Record release-bound approval
+        shell: bash
+        run: |
+          set -euo pipefail
+          port="${SSH_PORT:-22}"
+          python3 - <<'PY' > /tmp/deseocerca-approval.json
+          import json
+          import os
+          print(json.dumps({
+              "approval_type": os.environ["APPROVAL_TYPE"],
+              "approved_by": os.environ["APPROVED_BY"],
+              "evidence": os.environ["EVIDENCE"],
+          }))
+          PY
+          ssh -i ~/.ssh/deseocerca_approval -p "$port" "$SSH_USER@$HOST" \
+            "sudo -n /bin/bash '$REMOTE_DIR/deploy/deseocerca/root-ops.sh' record-approval" \
+            < /tmp/deseocerca-approval.json
+          rm -f /tmp/deseocerca-approval.json
+
+      - name: Remove temporary SSH key
+        if: always()
+        shell: bash
+        run: rm -f ~/.ssh/deseocerca_approval /tmp/deseocerca-approval.json
