@@ -86,8 +86,6 @@ CREATE TABLE IF NOT EXISTS ph7_account_lifecycle (
     deleteRequestedAt datetime DEFAULT NULL,
     deleteScheduledAt datetime DEFAULT NULL,
     recoveryTokenHash char(64) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
-    warning60SentAt datetime DEFAULT NULL,
-    warning83SentAt datetime DEFAULT NULL,
     inactiveDeactivatedAt datetime DEFAULT NULL,
     createdAt datetime NOT NULL,
     updatedAt datetime NOT NULL,
@@ -95,6 +93,19 @@ CREATE TABLE IF NOT EXISTS ph7_account_lifecycle (
     UNIQUE KEY recoveryTokenHash (recoveryTokenHash),
     KEY lifecycleStateDue (state, deleteScheduledAt),
     CONSTRAINT fk_dc_lifecycle_member FOREIGN KEY (profileId) REFERENCES ph7_members(profileId) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Auditable inactivity reminders. activityAnchor is the member's last successful
+-- login timestamp for that inactivity cycle. A new login creates a new cycle
+-- automatically while preserving the previous reminder audit trail.
+CREATE TABLE IF NOT EXISTS ph7_account_lifecycle_reminders (
+    profileId int(10) unsigned NOT NULL,
+    reminderCode varchar(8) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    activityAnchor datetime NOT NULL,
+    sentAt datetime NOT NULL,
+    PRIMARY KEY (profileId, reminderCode, activityAnchor),
+    KEY reminderSentAt (sentAt),
+    CONSTRAINT fk_dc_lifecycle_reminder_member FOREIGN KEY (profileId) REFERENCES ph7_members(profileId) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Spanish-first SEO copy for the initial Peru landing page.
