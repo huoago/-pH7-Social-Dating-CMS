@@ -22,6 +22,17 @@ validate_host() {
 }
 
 case "$ACTION" in
+  auto-install)
+    [ "$#" -eq 1 ] || { echo "Usage: root-ops.sh auto-install" >&2; exit 64; }
+    is_free_tier || { echo "Automatic first install is configured for the TiDB free-tier stack." >&2; exit 2; }
+    compose=(docker compose --env-file "$ENV_FILE" -f "$REMOTE_DIR/deploy/deseocerca/compose.free.yml")
+    if "${compose[@]}" exec -T app test -s /var/www/html/_constants.php; then
+      echo "DeseoCerca is already installed; automatic installer skipped."
+      exit 0
+    fi
+    exec /usr/bin/python3 "$REMOTE_DIR/deploy/deseocerca/automate-first-install.py"
+    ;;
+
   backup)
     [ "$#" -eq 1 ] || { echo "Usage: root-ops.sh backup" >&2; exit 64; }
     if is_free_tier; then
@@ -90,7 +101,7 @@ EOF
     ;;
 
   *)
-    echo "Allowed actions: backup, gate, promote, rollback, record-approval, prepared-check, mark-verified" >&2
+    echo "Allowed actions: auto-install, backup, gate, promote, rollback, record-approval, prepared-check, mark-verified" >&2
     exit 64
     ;;
 esac
