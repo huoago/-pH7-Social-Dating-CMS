@@ -116,7 +116,7 @@ Procedure
 4. Enter DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD exactly as shown.
 5. Keep prefix ph7_ and complete the real administrator account.
 6. Finish installation; _install will be removed automatically.
-7. Run: cd ${REMOTE_DIR} && sudo bash deploy/deseocerca/apply-bootstrap-free.sh
+7. Run: cd ${REMOTE_DIR} && bash deploy/deseocerca/apply-bootstrap-free.sh
 8. Delete this file after storing required credentials in a password manager.
 EOF
 chmod 600 "$FIRST_INSTALL_FILE"
