@@ -21,30 +21,28 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Validate free-tier deployment script syntax
+      - name: Validate free-tier deployment and release script syntax
         run: |
           bash -n deploy/deseocerca/google-free-vm-bootstrap.sh
           bash -n deploy/deseocerca/prepare-first-install-free.sh
           bash -n deploy/deseocerca/apply-bootstrap-free.sh
           bash -n deploy/deseocerca/backup-free.sh
           bash -n deploy/deseocerca/restore-free.sh
+          bash -n deploy/deseocerca/root-ops.sh
+          bash -n deploy/deseocerca/host-preflight.sh
+          bash -n deploy/deseocerca/release-gate.sh
+          bash -n deploy/deseocerca/promote-production.sh
+          bash -n deploy/deseocerca/rollback-production.sh
 
       - name: Validate TiDB-compatible SQL baseline
         shell: bash
         run: |
           set -euo pipefail
           sql='_install/data/sql/MySQL/pH7_Core.sql'
-
-          # TiDB Cloud Starter supports FULLTEXT only in selected AWS regions.
-          # DeseoCerca deliberately relies on exactly the existing error-log
-          # FULLTEXT index and the deployment workflow restricts TiDB to one of
-          # those supported regions. Other known unsupported MySQL constructs
-          # remain release blockers.
           if grep -Eiq '\bCREATE[[:space:]]+(TRIGGER|PROCEDURE|FUNCTION|EVENT)\b|\bSPATIAL\b' "$sql"; then
             echo "The pH7 schema contains a TiDB-incompatible trigger/procedure/function/event/spatial feature."
             exit 1
           fi
-
           expected_fulltext='^[[:space:]]*FULLTEXT[[:space:]]+KEY[[:space:]]+logError[[:space:]]*\(logError\)[[:space:]]*$'
           fulltext_total="$(grep -Eic '^[[:space:]]*FULLTEXT[[:space:]]+(KEY|INDEX)\b' "$sql" || true)"
           if [ "$fulltext_total" -ne 1 ] || ! grep -Eq "$expected_fulltext" "$sql"; then
@@ -68,9 +66,26 @@ jobs:
           TIDB_USERNAME: ci.root
           TIDB_PASSWORD: ci-not-a-real-password
           TIDB_DATABASE: deseocerca
-        run: docker compose -f deploy/deseocerca/compose.free.yml config --quiet
+        run: |
+          docker compose -f deploy/deseocerca/compose.free.yml config --quiet
+          services="$(docker compose -f deploy/deseocerca/compose.free.yml config --services)"
+          for required in db-tls app caddy lifecycle; do
+            grep -qx "$required" <<< "$services" || { echo "Missing free-tier service: $required"; exit 1; }
+          done
+          if grep -qx db <<< "$services"; then
+            echo "Free-tier Compose must not start a local MySQL database."
+            exit 1
+          fi
 
       - name: Verify MySQL client tooling used by backup and restore
         run: |
           docker run --rm mysql:8.0 mysqldump --version
           docker run --rm mysql:8.0 mysql --version
+
+      - name: Validate constrained root operations surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'Allowed actions: backup, gate, promote, rollback, record-approval, prepared-check, mark-verified' deploy/deseocerca/root-ops.sh
+          ! grep -Eq 'NOPASSWD: ALL|/usr/bin/systemctl \*' deploy/deseocerca/google-free-vm-bootstrap.sh
+          grep -Fq 'root-ops.sh *' deploy/deseocerca/google-free-vm-bootstrap.sh
