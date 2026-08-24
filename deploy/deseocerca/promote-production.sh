@@ -8,6 +8,7 @@ STATE_FILE="${DESEOCERCA_RELEASE_STATE_FILE:-/root/deseocerca-production-release
 PREPARED_MARKER="/root/deseocerca-production-prepared"
 RELEASE_SHA="${DESEOCERCA_RELEASE_SHA:-}"
 PRODUCTION_SITES="${DESEOCERCA_PRODUCTION_SITES:-deseocerca.com www.deseocerca.com}"
+PRODUCTION_CANONICAL_HOST="deseocerca.com"
 
 if [ "${EUID}" -ne 0 ]; then
   echo "Run this script with sudo or as root." >&2
@@ -50,13 +51,17 @@ read_env_value() {
 update_env_values() {
   local site_value="$1"
   local image_value="${2:-}"
-  SITE_VALUE="$site_value" IMAGE_VALUE="$image_value" python3 - <<'PY' \
+  local canonical_value="${3:-}"
+  SITE_VALUE="$site_value" IMAGE_VALUE="$image_value" CANONICAL_VALUE="$canonical_value" python3 - <<'PY' \
     | python3 "$REMOTE_DIR/deploy/deseocerca/update-env.py" "$ENV_FILE"
 import json
 import os
 payload = {"STAGING_SITE_ADDRESS": os.environ["SITE_VALUE"]}
 if os.environ.get("IMAGE_VALUE"):
     payload["DESEOCERCA_APP_IMAGE"] = os.environ["IMAGE_VALUE"]
+if os.environ.get("CANONICAL_VALUE"):
+    payload["PH7_CANONICAL_HOST"] = os.environ["CANONICAL_VALUE"]
+    payload["PH7_CANONICAL_SCHEME"] = "https"
 print(json.dumps(payload))
 PY
 }
@@ -108,11 +113,9 @@ if ! git merge-base --is-ancestor "$RELEASE_SHA" origin/18.x; then
 fi
 
 previous_sha="$(git rev-parse HEAD)"
-previous_site="$(read_env_value STAGING_SITE_ADDRESS)" || {
-  echo "STAGING_SITE_ADDRESS is missing from $ENV_FILE." >&2
-  exit 1
-}
+previous_site="$(read_env_value STAGING_SITE_ADDRESS)" || { echo "STAGING_SITE_ADDRESS is missing from $ENV_FILE." >&2; exit 1; }
 previous_image="$(read_env_value DESEOCERCA_APP_IMAGE || true)"
+previous_canonical="$(read_env_value PH7_CANONICAL_HOST || true)"
 if [ -z "$previous_site" ]; then
   echo "STAGING_SITE_ADDRESS is empty." >&2
   exit 1
@@ -135,21 +138,20 @@ if [ "$FREE_TIER" = true ]; then
 fi
 DESEOCERCA_DIR="$REMOTE_DIR" bash "$backup_script"
 latest_backup="$(find /var/backups/deseocerca -maxdepth 1 -type f -name 'deseocerca-*.tar.gz.enc' -printf '%T@ %p\n' 2>/dev/null | sort -nr | awk 'NR==1 {$1=""; sub(/^ /, ""); print; exit}')"
-[ -n "$latest_backup" ] && [ -f "$latest_backup" ] || {
-  echo "Promotion backup could not be located." >&2
-  exit 1
-}
+[ -n "$latest_backup" ] && [ -f "$latest_backup" ] || { echo "Promotion backup could not be located." >&2; exit 1; }
 
 umask 077
 previous_site_b64="$(printf '%s' "$previous_site" | base64 -w0)"
 backup_b64="$(printf '%s' "$latest_backup" | base64 -w0)"
 previous_image_b64="$(printf '%s' "$previous_image" | base64 -w0)"
+previous_canonical_b64="$(printf '%s' "$previous_canonical" | base64 -w0)"
 cat > "$STATE_FILE" <<EOF
 service=DeseoCerca
 previous_sha=$previous_sha
 release_sha=$RELEASE_SHA
 previous_site_address_b64=$previous_site_b64
 previous_app_image_b64=$previous_image_b64
+previous_canonical_host_b64=$previous_canonical_b64
 pre_release_backup_b64=$backup_b64
 free_tier=$FREE_TIER
 prepared_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -161,9 +163,9 @@ on_error() {
   local status="$?"
   trap - ERR
   if [ "$switch_started" -eq 1 ]; then
-    echo "Production preparation failed; restoring the previous Git revision and site address." >&2
+    echo "Production preparation failed; restoring the previous Git revision, site address and canonical host." >&2
     git checkout --detach "$previous_sha" >/dev/null 2>&1 || true
-    update_env_values "$previous_site" "$previous_image" || true
+    update_env_values "$previous_site" "$previous_image" "$previous_canonical" || true
     compose_up || true
   fi
   rm -f "$PREPARED_MARKER"
@@ -171,7 +173,7 @@ on_error() {
 }
 trap on_error ERR
 
-update_env_values "$PRODUCTION_SITES" "$release_image"
+update_env_values "$PRODUCTION_SITES" "$release_image" "$PRODUCTION_CANONICAL_HOST"
 switch_started=1
 
 git checkout --detach "$RELEASE_SHA"
@@ -183,6 +185,7 @@ service=DeseoCerca
 release_sha=$RELEASE_SHA
 previous_sha=$previous_sha
 production_sites=$PRODUCTION_SITES
+canonical_host=$PRODUCTION_CANONICAL_HOST
 free_tier=$FREE_TIER
 prepared_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 EOF
