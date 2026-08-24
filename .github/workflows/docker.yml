@@ -22,7 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Validate Compose configuration
+      - name: Validate development Compose configuration
         run: docker compose config --quiet
 
       - name: Build development image
@@ -32,6 +32,31 @@ jobs:
         run: |
           docker compose run --rm --no-deps php sh -lc \
             "php -l deploy/deseocerca/cli-bootstrap.php && php -l deploy/deseocerca/account-lifecycle.php && php -l _protected/app/system/modules/user/models/AccountLifecycleModel.php"
+
+      - name: Validate staging Compose configuration
+        env:
+          MYSQL_PASSWORD: ci-deseocerca-password
+          MYSQL_ROOT_PASSWORD: ci-deseocerca-root-password
+          STAGING_SITE_ADDRESS: :80
+        run: docker compose -f deploy/deseocerca/compose.staging.yml config --quiet
+
+      - name: Build staging image
+        run: docker build --file deploy/deseocerca/Dockerfile.staging --tag deseocerca-staging-ci .
+
+      - name: Validate staging entrypoint and runtime persistence
+        run: |
+          docker run --rm --entrypoint sh deseocerca-staging-ci -lc \
+            "sh -n /usr/local/bin/deseocerca-entrypoint && php -l deploy/deseocerca/account-lifecycle.php"
+          docker volume create deseocerca-ci-runtime >/dev/null
+          docker run --rm \
+            -v deseocerca-ci-runtime:/var/lib/deseocerca/runtime \
+            deseocerca-staging-ci \
+            sh -lc "printf '%s\n' '<?php define(\"DESEOCERCA_CI\", true);' > /var/www/html/_constants.php; sleep 6"
+          docker run --rm \
+            -v deseocerca-ci-runtime:/var/lib/deseocerca/runtime \
+            deseocerca-staging-ci \
+            sh -lc "grep -q DESEOCERCA_CI /var/www/html/_constants.php"
+          docker volume rm deseocerca-ci-runtime >/dev/null
 
       - name: Start development stack
         run: docker compose up --detach --wait
@@ -49,4 +74,6 @@ jobs:
 
       - name: Stop development stack
         if: always()
-        run: docker compose down --volumes
+        run: |
+          docker compose down --volumes
+          docker volume rm deseocerca-ci-runtime >/dev/null 2>&1 || true
