@@ -24,7 +24,9 @@ RUN apt-get update \
 COPY --from=composer /usr/bin/composer /usr/local/bin/composer
 COPY docker/php/uploads.ini /usr/local/etc/php/conf.d/ph7builder-uploads.ini
 COPY deploy/deseocerca/apache-deseocerca.conf /etc/apache2/conf-available/deseocerca.conf
-RUN a2enconf deseocerca
+COPY deploy/deseocerca/docker-entrypoint.sh /usr/local/bin/deseocerca-entrypoint
+RUN a2enconf deseocerca \
+    && chmod 0755 /usr/local/bin/deseocerca-entrypoint
 
 WORKDIR /var/www/html
 COPY --chown=www-data:www-data . /var/www/html
@@ -41,10 +43,14 @@ RUN composer install --no-interaction --no-progress --prefer-dist \
         /var/www/html/_protected/data/tmp \
         /var/www/html/data \
         /var/www/html/_repository/module \
+        /var/lib/deseocerca/runtime \
     && find /var/www/html -type d -exec chmod 0755 {} + \
     && find /var/www/html -type f -exec chmod 0644 {} + \
     && find /var/www/html/_install/data/caches /var/www/html/_install/data/logs /var/www/html/_protected/app/configs /var/www/html/_protected/data /var/www/html/data /var/www/html/_repository/module -type d -exec chmod 0775 {} + \
-    && chown -R www-data:www-data /var/www/html
+    && chown -R www-data:www-data /var/www/html /var/lib/deseocerca/runtime
 
 ENV TZ=America/Lima
 EXPOSE 80
+
+ENTRYPOINT ["/usr/local/bin/deseocerca-entrypoint"]
+CMD ["apache2-foreground"]
