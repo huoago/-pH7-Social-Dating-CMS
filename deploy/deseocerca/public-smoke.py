@@ -10,7 +10,7 @@ import unicodedata
 from html.parser import HTMLParser
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlsplit
-from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener
 
 
 class LinkParser(HTMLParser):
@@ -52,8 +52,11 @@ def get(url: str, timeout: float = 15.0) -> tuple[int, str, dict[str, str], str]
             "Accept": "text/html,application/xhtml+xml",
         },
     )
-    opener = build_opener(HTTPRedirectHandler())
-    with opener.open(request, timeout=timeout, context=ssl.create_default_context()) as response:  # type: ignore[arg-type]
+    opener = build_opener(
+        HTTPRedirectHandler(),
+        HTTPSHandler(context=ssl.create_default_context()),
+    )
+    with opener.open(request, timeout=timeout) as response:
         raw = response.read(2_000_000)
         charset = response.headers.get_content_charset() or "utf-8"
         body = raw.decode(charset, errors="replace")

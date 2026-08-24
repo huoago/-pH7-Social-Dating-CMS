@@ -42,6 +42,40 @@ jobs:
           docker compose run --rm --no-deps php sh -lc \
             "php -l deploy/deseocerca/cli-bootstrap.php && php -l deploy/deseocerca/account-lifecycle.php && php -l deploy/deseocerca/verify-runtime.php && php -l _protected/app/system/modules/user/models/AccountLifecycleModel.php"
 
+      - name: Exercise public-smoke HTTP client
+        shell: bash
+        run: |
+          set -euo pipefail
+          smoke_dir="$(mktemp -d)"
+          printf 'DeseoCerca smoke client\n' > "$smoke_dir/index.html"
+          python3 -m http.server 18080 --bind 127.0.0.1 --directory "$smoke_dir" >/tmp/deseocerca-public-smoke-http.log 2>&1 &
+          smoke_pid=$!
+          cleanup() {
+            kill "$smoke_pid" >/dev/null 2>&1 || true
+            wait "$smoke_pid" >/dev/null 2>&1 || true
+            rm -rf "$smoke_dir"
+          }
+          trap cleanup EXIT
+          for _ in {1..20}; do
+            curl -fsS http://127.0.0.1:18080/ >/dev/null && break
+            sleep 0.2
+          done
+          python3 - <<'PY'
+          import importlib.util
+
+          spec = importlib.util.spec_from_file_location(
+              "deseocerca_public_smoke",
+              "deploy/deseocerca/public-smoke.py",
+          )
+          assert spec is not None and spec.loader is not None
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          status, final_url, _, body = module.get("http://127.0.0.1:18080/")
+          assert status == 200
+          assert final_url == "http://127.0.0.1:18080/"
+          assert "DeseoCerca smoke client" in body
+          PY
+
       - name: Validate safe staging environment overlay
         run: |
           set -euo pipefail
