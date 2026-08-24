@@ -3,8 +3,16 @@ set -euo pipefail
 
 REMOTE_DIR="${DESEOCERCA_DIR:-/opt/deseocerca-staging}"
 ENV_FILE="${DESEOCERCA_ENV_FILE:-$REMOTE_DIR/.env}"
-COMPOSE_FILE="$REMOTE_DIR/deploy/deseocerca/compose.staging.yml"
+COMPOSE_FILE="${DESEOCERCA_COMPOSE_FILE:-}"
 EXPECTED_HOST="${1:-}"
+
+if [ -z "$COMPOSE_FILE" ]; then
+  if [ -f "$ENV_FILE" ] && grep -Eq '^TIDB_HOST=.+$' "$ENV_FILE"; then
+    COMPOSE_FILE="$REMOTE_DIR/deploy/deseocerca/compose.free.yml"
+  else
+    COMPOSE_FILE="$REMOTE_DIR/deploy/deseocerca/compose.staging.yml"
+  fi
+fi
 
 failures=0
 warnings=0
@@ -30,11 +38,20 @@ else
   fail "insufficient memory: ${mem_mb} MB"
 fi
 
+if [ "$mem_mb" -lt 1800 ]; then
+  swap_mb="$(awk '/SwapTotal/ {printf "%d", $2/1024}' /proc/meminfo)"
+  if [ "$swap_mb" -ge 1500 ]; then
+    pass "swap available for low-memory host: ${swap_mb} MB"
+  else
+    fail "low-memory host has insufficient swap: ${swap_mb} MB"
+  fi
+fi
+
 root_free_mb="$(df -Pm / | awk 'NR==2 {print $4}')"
 if [ "$root_free_mb" -ge 12000 ]; then
   pass "free disk: ${root_free_mb} MB"
 elif [ "$root_free_mb" -ge 6000 ]; then
-  warn "limited free disk: ${root_free_mb} MB; Docker builds/backups may exhaust it"
+  warn "limited free disk: ${root_free_mb} MB; Docker images/backups may exhaust it"
 else
   fail "insufficient free disk: ${root_free_mb} MB"
 fi
@@ -68,20 +85,28 @@ else
 fi
 
 if [ -f "$COMPOSE_FILE" ]; then
-  pass "staging Compose file exists"
+  pass "Compose file exists: $(basename "$COMPOSE_FILE")"
 else
-  fail "missing staging Compose file"
+  fail "missing Compose file: $COMPOSE_FILE"
 fi
 
 if [ -f "$ENV_FILE" ] && [ -f "$COMPOSE_FILE" ] && docker compose version >/dev/null 2>&1; then
   compose=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
   if "${compose[@]}" config --quiet >/dev/null 2>&1; then
-    pass "staging Compose configuration parses"
+    pass "Compose configuration parses"
   else
-    fail "staging Compose configuration is invalid"
+    fail "Compose configuration is invalid"
   fi
 
-  for service in db app caddy lifecycle; do
+  database_service="db"
+  if "${compose[@]}" config --services 2>/dev/null | grep -qx 'db-tls'; then
+    database_service="db-tls"
+    pass "external TiDB/TLS database mode detected"
+  else
+    pass "local MySQL database mode detected"
+  fi
+
+  for service in "$database_service" app caddy lifecycle; do
     if "${compose[@]}" ps --status running --services 2>/dev/null | grep -qx "$service"; then
       pass "container running: $service"
     else
@@ -119,9 +144,9 @@ else
   warn "TCP 443 is not listening yet"
 fi
 if ss -lnt 2>/dev/null | awk '{print $4}' | grep -Eq '(^|:)3306$'; then
-  fail "MySQL 3306 is listening on the host; it should remain Docker-internal only"
+  fail "database port 3306 is listening on the host; it must remain Docker-internal only"
 else
-  pass "MySQL 3306 is not exposed on the host"
+  pass "database port 3306 is not exposed on the host"
 fi
 
 if [ -n "$EXPECTED_HOST" ]; then
