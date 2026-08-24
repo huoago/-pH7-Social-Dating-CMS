@@ -13,6 +13,7 @@ SECRETS_FILE="/root/deseocerca-staging-secrets.txt"
 BACKUP_PASSPHRASE_FILE="/root/deseocerca-backup-passphrase"
 STAGING_SITE_ADDRESS="${STAGING_SITE_ADDRESS:-:80}"
 MAILER_DSN="${PH7_MAILER_DSN:-}"
+DEPLOY_USER="${DESEOCERCA_DEPLOY_USER:-ubuntu}"
 
 if [ "${EUID}" -ne 0 ]; then
   echo "Run this script with sudo or as root." >&2
@@ -24,10 +25,20 @@ if ! command -v apt-get >/dev/null 2>&1; then
   exit 1
 fi
 
+# Compose .env is line-oriented. Reject control characters rather than allowing a
+# malformed DSN/site value to inject additional environment entries.
+for value_name in STAGING_SITE_ADDRESS MAILER_DSN; do
+  value="${!value_name}"
+  if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
+    echo "$value_name must not contain CR/LF characters." >&2
+    exit 1
+  fi
+done
+
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y --no-install-recommends \
-  ca-certificates curl git gnupg openssl ufw jq
+  ca-certificates curl git gnupg openssl ufw jq python3-minimal iproute2
 
 # Install Docker Engine from Docker's official apt repository if needed.
 if ! command -v docker >/dev/null 2>&1; then
@@ -45,8 +56,20 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 
 systemctl enable --now docker
-
 docker compose version >/dev/null
+
+# OCI Ubuntu uses the 'ubuntu' user by default. Give the selected deployment user
+# ownership of the Git working tree and Docker access so subsequent GitHub Actions
+# SSH deployments do not fail on root-owned /opt files. Root-only generated secret
+# files remain outside the application directory.
+if id "$DEPLOY_USER" >/dev/null 2>&1; then
+  usermod -aG docker "$DEPLOY_USER"
+  DEPLOY_GROUP="$(id -gn "$DEPLOY_USER")"
+else
+  echo "Deployment user '$DEPLOY_USER' does not exist; keeping application tree root-owned." >&2
+  DEPLOY_USER=""
+  DEPLOY_GROUP=""
+fi
 
 # Add swap only on small-memory fallback VMs (for example 1 GB AMD micro).
 mem_kb="$(awk '/MemTotal/ {print $2}' /proc/meminfo)"
@@ -67,6 +90,8 @@ ufw allow 443/tcp
 ufw --force enable
 
 mkdir -p "$(dirname "$REMOTE_DIR")"
+# A rerun may encounter a repository that is intentionally owned by DEPLOY_USER.
+git config --global --add safe.directory "$REMOTE_DIR" || true
 if [ -d "$REMOTE_DIR/.git" ]; then
   git -C "$REMOTE_DIR" fetch --prune origin "$BRANCH"
   git -C "$REMOTE_DIR" checkout -f "$BRANCH"
@@ -99,11 +124,18 @@ DeseoCerca staging generated credentials
 DESEOCERCA_STAGING_DB_PASSWORD=${db_password}
 DESEOCERCA_STAGING_DB_ROOT_PASSWORD=${db_root_password}
 STAGING_SITE_ADDRESS=${STAGING_SITE_ADDRESS}
+DESEOCERCA_STAGING_USER=${DEPLOY_USER:-root}
 
-Keep this root-only file private. Copy the two database values into GitHub Actions
-Secrets later if you want GitHub-driven redeployments.
+Keep this root-only file private. Database values are not required in GitHub
+Actions when the remote .env created by this bootstrap is preserved.
 EOF
   chmod 600 "$SECRETS_FILE"
+fi
+
+# Allow the deployment user to update the Git working tree and protected .env.
+if [ -n "$DEPLOY_USER" ]; then
+  chown -R "$DEPLOY_USER:$DEPLOY_GROUP" "$REMOTE_DIR"
+  chmod 600 "$ENV_FILE"
 fi
 
 # Generate a dedicated backup encryption key only once. It is intentionally
@@ -184,6 +216,7 @@ DeseoCerca free-VM bootstrap completed.
 Application directory: $REMOTE_DIR
 Generated DB secrets: $SECRETS_FILE
 Backup encryption key: $BACKUP_PASSPHRASE_FILE
+Deployment user: ${DEPLOY_USER:-root}
 Architecture: $(uname -m)
 Site binding: $STAGING_SITE_ADDRESS
 
