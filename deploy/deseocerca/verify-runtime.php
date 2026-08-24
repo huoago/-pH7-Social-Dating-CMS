@@ -36,7 +36,16 @@ $checkTable = static function (string $table) use ($oDb, $record): void {
     }
 };
 
-foreach (['members', 'members_favorites', 'members_blocks', 'account_lifecycle', 'report'] as $sTable) {
+foreach (
+    [
+        'members',
+        'members_favorites',
+        'members_blocks',
+        'account_lifecycle',
+        'account_lifecycle_reminders',
+        'report',
+    ] as $sTable
+) {
     $checkTable($sTable);
 }
 
