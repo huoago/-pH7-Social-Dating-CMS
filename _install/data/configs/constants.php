@@ -3,8 +3,8 @@
  * @author           Pierre-Henry Soria <hello@ph7builder.com>
  * @copyright        (c) 2012-2026, Pierre-Henry Soria. All Rights Reserved.
  * @license          MIT License; See LICENSE.md and COPYRIGHT.md in the root directory.
- * @link             https://ph7builder.com
- * @package          PH7
+ * @link              https://ph7builder.com
+ * @package           PH7
  */
 
 namespace PH7;
@@ -14,10 +14,35 @@ defined('PH7') or exit(header('Location: ./'));
 ########## VARIABLES ##########
 
 ##### URL #####
-// The installer replaces these values once. Runtime requests must never derive
-// security-sensitive links from the request-controlled Host header.
+// The installer pins a safe fallback authority. A deployment-controlled
+// environment override is allowed so the exact same installed runtime can be
+// promoted from staging.deseocerca.com to deseocerca.com without trusting the
+// request Host header or rewriting application data.
 $sUrlProtocol = '%url_protocol%';
 $sDomain = '%domain%';
+
+$mRuntimeScheme = getenv('PH7_CANONICAL_SCHEME');
+if (is_string($mRuntimeScheme) && trim($mRuntimeScheme) !== '') {
+    $sRuntimeScheme = strtolower(trim($mRuntimeScheme));
+    if (!in_array($sRuntimeScheme, ['http', 'https'], true)) {
+        http_response_code(500);
+        exit('Configuration error: PH7_CANONICAL_SCHEME must be http or https.');
+    }
+    $sUrlProtocol = $sRuntimeScheme . '://';
+}
+
+$mRuntimeHost = getenv('PH7_CANONICAL_HOST');
+if (is_string($mRuntimeHost) && trim($mRuntimeHost) !== '') {
+    $sRuntimeHost = trim($mRuntimeHost);
+    $aRuntimeHostMatch = [];
+    if (preg_match('/^(?:\\[[0-9a-f:.]+\\]|[a-z0-9.-]+)(?::([0-9]{1,5}))?$/iD', $sRuntimeHost, $aRuntimeHostMatch) !== 1 ||
+        isset($aRuntimeHostMatch[1]) && ((int)$aRuntimeHostMatch[1] < 1 || (int)$aRuntimeHostMatch[1] > 65535)
+    ) {
+        http_response_code(500);
+        exit('Configuration error: PH7_CANONICAL_HOST is invalid.');
+    }
+    $sDomain = $sRuntimeHost;
+}
 
 // Host-only cookies are the safe default. PH7_COOKIE_DOMAIN can explicitly opt
 // into a validated parent domain when cross-subdomain cookies are required.
