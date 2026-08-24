@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 REMOTE_DIR="${DESEOCERCA_DIR:-/opt/deseocerca-staging}"
 ENV_FILE="${DESEOCERCA_ENV_FILE:-$REMOTE_DIR/.env}"
-COMPOSE_FILE="$REMOTE_DIR/deploy/deseocerca/compose.staging.yml"
+COMPOSE_FILE="${DESEOCERCA_COMPOSE_FILE:-}"
 STATE_FILE="${DESEOCERCA_RELEASE_STATE_FILE:-/root/deseocerca-production-release.env}"
 PREPARED_MARKER="/root/deseocerca-production-prepared"
 RELEASE_SHA="${DESEOCERCA_RELEASE_SHA:-}"
@@ -21,10 +21,23 @@ if [[ "$PRODUCTION_SITES" == *$'\n'* || "$PRODUCTION_SITES" == *$'\r'* ]]; then
   echo "DESEOCERCA_PRODUCTION_SITES must not contain CR/LF characters." >&2
   exit 2
 fi
-if [ ! -d "$REMOTE_DIR/.git" ] || [ ! -f "$ENV_FILE" ] || [ ! -f "$COMPOSE_FILE" ]; then
+if [ ! -d "$REMOTE_DIR/.git" ] || [ ! -f "$ENV_FILE" ]; then
   echo "DeseoCerca staging installation is not prepared on this host." >&2
   exit 2
 fi
+
+FREE_TIER=false
+if grep -Eq '^TIDB_HOST=.+$' "$ENV_FILE"; then
+  FREE_TIER=true
+fi
+if [ -z "$COMPOSE_FILE" ]; then
+  if [ "$FREE_TIER" = true ]; then
+    COMPOSE_FILE="$REMOTE_DIR/deploy/deseocerca/compose.free.yml"
+  else
+    COMPOSE_FILE="$REMOTE_DIR/deploy/deseocerca/compose.staging.yml"
+  fi
+fi
+[ -f "$COMPOSE_FILE" ] || { echo "Missing Compose file: $COMPOSE_FILE" >&2; exit 2; }
 
 read_env_value() {
   local key="$1"
@@ -34,25 +47,49 @@ read_env_value() {
   printf '%s' "${line#*=}"
 }
 
-update_site_address() {
-  local value="$1"
-  SITE_VALUE="$value" python3 - <<'PY' \
+update_env_values() {
+  local site_value="$1"
+  local image_value="${2:-}"
+  SITE_VALUE="$site_value" IMAGE_VALUE="$image_value" python3 - <<'PY' \
     | python3 "$REMOTE_DIR/deploy/deseocerca/update-env.py" "$ENV_FILE"
 import json
 import os
-print(json.dumps({"STAGING_SITE_ADDRESS": os.environ["SITE_VALUE"]}))
+payload = {"STAGING_SITE_ADDRESS": os.environ["SITE_VALUE"]}
+if os.environ.get("IMAGE_VALUE"):
+    payload["DESEOCERCA_APP_IMAGE"] = os.environ["IMAGE_VALUE"]
+print(json.dumps(payload))
 PY
+}
+
+compose_up() {
+  if [ "$FREE_TIER" = true ]; then
+    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --remove-orphans
+  else
+    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --build --remove-orphans
+  fi
 }
 
 internal_verify() {
   local -a compose
+  local database_service="db"
   compose=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
-  for service in db app caddy lifecycle; do
+  if "${compose[@]}" config --services | grep -qx db-tls; then
+    database_service="db-tls"
+  fi
+  for service in "$database_service" app caddy lifecycle; do
     "${compose[@]}" ps --status running --services | grep -qx "$service" || {
       echo "Required service is not running: $service" >&2
       return 1
     }
   done
+  if [ "$database_service" = "db-tls" ]; then
+    local tidb_user tidb_database
+    tidb_user="$(read_env_value TIDB_USERNAME)"
+    tidb_database="$(read_env_value TIDB_DATABASE)"
+    "${compose[@]}" run --rm --no-deps -T --entrypoint mysql db-client \
+      --host=db-tls --port=3306 --user="$tidb_user" --database="$tidb_database" \
+      --connect-timeout=10 --execute='SELECT 1' >/dev/null
+  fi
   "${compose[@]}" exec -T app test -s /var/www/html/_constants.php
   "${compose[@]}" exec -T app test ! -d /var/www/html/_install
   "${compose[@]}" exec -T app php deploy/deseocerca/verify-runtime.php
@@ -75,16 +112,28 @@ previous_site="$(read_env_value STAGING_SITE_ADDRESS)" || {
   echo "STAGING_SITE_ADDRESS is missing from $ENV_FILE." >&2
   exit 1
 }
+previous_image="$(read_env_value DESEOCERCA_APP_IMAGE || true)"
 if [ -z "$previous_site" ]; then
   echo "STAGING_SITE_ADDRESS is empty." >&2
   exit 1
 fi
 
-# A promotion is allowed only from an already-installed, healthy runtime.
+release_image=""
+if [ "$FREE_TIER" = true ]; then
+  release_image="deseocerca-free:$RELEASE_SHA"
+  if ! docker image inspect "$release_image" >/dev/null 2>&1; then
+    echo "Refusing free-tier promotion: immutable image $release_image is not loaded on this VM." >&2
+    exit 1
+  fi
+fi
+
 internal_verify
 
-# Create a fresh encrypted recovery point before any release mutation.
-DESEOCERCA_DIR="$REMOTE_DIR" bash "$REMOTE_DIR/deploy/deseocerca/backup.sh"
+backup_script="$REMOTE_DIR/deploy/deseocerca/backup.sh"
+if [ "$FREE_TIER" = true ]; then
+  backup_script="$REMOTE_DIR/deploy/deseocerca/backup-free.sh"
+fi
+DESEOCERCA_DIR="$REMOTE_DIR" bash "$backup_script"
 latest_backup="$(find /var/backups/deseocerca -maxdepth 1 -type f -name 'deseocerca-*.tar.gz.enc' -printf '%T@ %p\n' 2>/dev/null | sort -nr | awk 'NR==1 {$1=""; sub(/^ /, ""); print; exit}')"
 [ -n "$latest_backup" ] && [ -f "$latest_backup" ] || {
   echo "Promotion backup could not be located." >&2
@@ -94,12 +143,15 @@ latest_backup="$(find /var/backups/deseocerca -maxdepth 1 -type f -name 'deseoce
 umask 077
 previous_site_b64="$(printf '%s' "$previous_site" | base64 -w0)"
 backup_b64="$(printf '%s' "$latest_backup" | base64 -w0)"
+previous_image_b64="$(printf '%s' "$previous_image" | base64 -w0)"
 cat > "$STATE_FILE" <<EOF
 service=DeseoCerca
 previous_sha=$previous_sha
 release_sha=$RELEASE_SHA
 previous_site_address_b64=$previous_site_b64
+previous_app_image_b64=$previous_image_b64
 pre_release_backup_b64=$backup_b64
+free_tier=$FREE_TIER
 prepared_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 EOF
 chmod 600 "$STATE_FILE"
@@ -111,21 +163,19 @@ on_error() {
   if [ "$switch_started" -eq 1 ]; then
     echo "Production preparation failed; restoring the previous Git revision and site address." >&2
     git checkout --detach "$previous_sha" >/dev/null 2>&1 || true
-    update_site_address "$previous_site" || true
-    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --build --remove-orphans || true
+    update_env_values "$previous_site" "$previous_image" || true
+    compose_up || true
   fi
   rm -f "$PREPARED_MARKER"
   exit "$status"
 }
 trap on_error ERR
 
-# Caddy supports one environment substitution expanding into multiple site
-# address tokens, so the same stack can serve apex and www without a second VM.
-update_site_address "$PRODUCTION_SITES"
+update_env_values "$PRODUCTION_SITES" "$release_image"
 switch_started=1
 
 git checkout --detach "$RELEASE_SHA"
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --build --remove-orphans
+compose_up
 internal_verify
 
 cat > "$PREPARED_MARKER" <<EOF
@@ -133,6 +183,7 @@ service=DeseoCerca
 release_sha=$RELEASE_SHA
 previous_sha=$previous_sha
 production_sites=$PRODUCTION_SITES
+free_tier=$FREE_TIER
 prepared_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 EOF
 chmod 600 "$PREPARED_MARKER"
