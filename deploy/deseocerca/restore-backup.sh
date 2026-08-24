@@ -39,15 +39,25 @@ fi
 cd "$(dirname "$archive")"
 sha256sum --check "$(basename "$checksum_file")"
 
-set -a
-# shellcheck disable=SC1090
-. "$ENV_FILE"
-set +a
+# Read only the exact MySQL keys needed by the restore. Never source the Compose
+# .env as shell code because PH7_MAILER_DSN can contain shell metacharacters.
+read_env_value() {
+  local key="$1"
+  local line
+  line="$(grep -m1 -E "^${key}=" "$ENV_FILE" || true)"
+  [ -n "$line" ] || return 1
+  printf '%s' "${line#*=}"
+}
 
-: "${MYSQL_DATABASE:?MYSQL_DATABASE is required}"
-: "${MYSQL_USER:?MYSQL_USER is required}"
-: "${MYSQL_PASSWORD:?MYSQL_PASSWORD is required}"
-: "${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required}"
+MYSQL_DATABASE="$(read_env_value MYSQL_DATABASE)" || { echo 'MYSQL_DATABASE is missing.' >&2; exit 1; }
+MYSQL_USER="$(read_env_value MYSQL_USER)" || { echo 'MYSQL_USER is missing.' >&2; exit 1; }
+MYSQL_PASSWORD="$(read_env_value MYSQL_PASSWORD)" || { echo 'MYSQL_PASSWORD is missing.' >&2; exit 1; }
+MYSQL_ROOT_PASSWORD="$(read_env_value MYSQL_ROOT_PASSWORD)" || { echo 'MYSQL_ROOT_PASSWORD is missing.' >&2; exit 1; }
+
+if [[ ! "$MYSQL_DATABASE" =~ ^[A-Za-z0-9_]+$ || ! "$MYSQL_USER" =~ ^[A-Za-z0-9_]+$ ]]; then
+  echo "Unsafe MySQL database/user value in $ENV_FILE." >&2
+  exit 1
+fi
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
@@ -106,16 +116,17 @@ done
   db mysql -uroot "$MYSQL_DATABASE" < "$tmp_dir/database.sql"
 
 # Restore application data into the same named volumes used by app/lifecycle.
-# The backup archive contains entries rooted at both /var/www/html and
-# /var/lib/deseocerca, so it is streamed twice with an explicit member list.
+# find -mindepth removes hidden files too; glob-only cleanup would leave dotfiles.
 cat "$tmp_dir/application-data.tar.gz" \
   | "${compose[@]}" run --rm -T --no-deps --entrypoint sh app -lc '
       set -e
-      rm -rf \
-        /var/www/html/data/* \
-        /var/www/html/_protected/data/* \
-        /var/www/html/_protected/app/configs/* \
-        /var/www/html/_repository/module/*
+      for path in \
+        /var/www/html/data \
+        /var/www/html/_protected/data \
+        /var/www/html/_protected/app/configs \
+        /var/www/html/_repository/module; do
+        find "$path" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+      done
       tar -xzf - -C /var/www/html \
         data _protected/data _protected/app/configs _repository/module
     '
@@ -123,7 +134,7 @@ cat "$tmp_dir/application-data.tar.gz" \
 cat "$tmp_dir/application-data.tar.gz" \
   | "${compose[@]}" run --rm -T --no-deps --entrypoint sh app -lc '
       set -e
-      rm -rf /var/lib/deseocerca/runtime/*
+      find /var/lib/deseocerca/runtime -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
       tar -xzf - -C /var/lib/deseocerca runtime
     '
 
