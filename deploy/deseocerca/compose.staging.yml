@@ -1,3 +1,20 @@
+x-deseocerca-build: &deseocerca-build
+  context: ../..
+  dockerfile: deploy/deseocerca/Dockerfile.staging
+  args:
+    PHP_VERSION: "8.2"
+
+x-deseocerca-environment: &deseocerca-environment
+  TZ: America/Lima
+  PH7_MAILER_DSN: ${PH7_MAILER_DSN:-}
+
+x-deseocerca-volumes: &deseocerca-volumes
+  - deseocerca_configs:/var/www/html/_protected/app/configs
+  - deseocerca_public_data:/var/www/html/data
+  - deseocerca_protected_data:/var/www/html/_protected/data
+  - deseocerca_modules:/var/www/html/_repository/module
+  - deseocerca_runtime:/var/lib/deseocerca/runtime
+
 services:
   db:
     image: mysql:8.0
@@ -24,23 +41,36 @@ services:
       - deseocerca_private
 
   app:
-    build:
-      context: ../..
-      dockerfile: deploy/deseocerca/Dockerfile.staging
-      args:
-        PHP_VERSION: "8.2"
+    image: deseocerca-app:staging
+    build: *deseocerca-build
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
-    environment:
-      TZ: America/Lima
-      PH7_MAILER_DSN: ${PH7_MAILER_DSN:-}
-    volumes:
-      - deseocerca_configs:/var/www/html/_protected/app/configs
-      - deseocerca_public_data:/var/www/html/data
-      - deseocerca_protected_data:/var/www/html/_protected/data
-      - deseocerca_modules:/var/www/html/_repository/module
+    environment: *deseocerca-environment
+    volumes: *deseocerca-volumes
+    networks:
+      - deseocerca_private
+      - deseocerca_edge
+
+  lifecycle:
+    image: deseocerca-app:staging
+    build: *deseocerca-build
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment: *deseocerca-environment
+    volumes: *deseocerca-volumes
+    command:
+      - sh
+      - -lc
+      - |
+        while [ ! -s /var/www/html/_constants.php ]; do sleep 60; done
+        while true; do
+          php deploy/deseocerca/account-lifecycle.php || true
+          sleep 86400
+        done
     networks:
       - deseocerca_private
       - deseocerca_edge
@@ -74,5 +104,6 @@ volumes:
   deseocerca_public_data:
   deseocerca_protected_data:
   deseocerca_modules:
+  deseocerca_runtime:
   deseocerca_caddy_data:
   deseocerca_caddy_config:
