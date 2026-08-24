@@ -5,6 +5,7 @@ APP_ROOT="/var/www/html"
 RUNTIME_DIR="/var/lib/deseocerca/runtime"
 CONSTANTS_FILE="${APP_ROOT}/_constants.php"
 PERSISTED_CONSTANTS="${RUNTIME_DIR}/_constants.php"
+INSTALL_DIR="${APP_ROOT}/_install"
 
 mkdir -p "${RUNTIME_DIR}"
 
@@ -14,6 +15,13 @@ if [ ! -f "${CONSTANTS_FILE}" ] && [ -s "${PERSISTED_CONSTANTS}" ]; then
     cp "${PERSISTED_CONSTANTS}" "${CONSTANTS_FILE}"
     chmod 0600 "${CONSTANTS_FILE}"
     chown www-data:www-data "${CONSTANTS_FILE}"
+fi
+
+# A rebuilt image contains the browser installer again. Once a persisted
+# _constants.php proves installation has completed, remove the installer on
+# every container start so deployment cannot accidentally reopen setup.
+if [ -s "${CONSTANTS_FILE}" ] && [ -d "${INSTALL_DIR}" ]; then
+    rm -rf "${INSTALL_DIR}"
 fi
 
 sync_runtime_constants() {
