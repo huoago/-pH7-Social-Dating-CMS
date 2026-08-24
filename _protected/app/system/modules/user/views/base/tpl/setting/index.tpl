@@ -34,6 +34,11 @@
             <span>{lang 'Password'}</span>
         </a>
     </li>
+    <li>
+        <a href="#account">
+            <span>Cuenta</span>
+        </a>
+    </li>
 </ol>
 
 <div class="content" id="edit">
@@ -60,7 +65,11 @@
     {manual_include 'password.tpl'}
 </div>
 
+<div class="content" id="account">
+    {manual_include 'account.tpl'}
+</div>
+
 <script src="{url_static}js/tabs.js"></script>
 <script>
-    tabs('p', ['edit','avatar','design','notification','privacy','pwd']);
+    tabs('p', ['edit','avatar','design','notification','privacy','pwd','account']);
 </script>

@@ -1,24 +1,26 @@
 <div class="center">
     {if !$delete_status}
         <p class="bold green1">
-            {lang 'Excellent choice!'}<br />
-            {lang 'You will see, you will not regret it!'}<br />
-            {lang 'At %site_name%, we work hard to give you one of the best social service!'}
+            La solicitud de eliminación fue cancelada. Tu cuenta permanece activa.
         </p>
     {else}
         <p class="bold red">
-            {lang 'Are you really sure you want to delete your account?'}
+            ¿Confirmas que quieres iniciar la eliminación de tu cuenta?
+        </p>
+        <p>
+            Tu cuenta se desactivará inmediatamente. Tendrás 90 días para recuperarla mediante el enlace enviado a tu correo.
+            Transcurrido ese plazo, la eliminación definitiva será ejecutada por el proceso de mantenimiento.
         </p>
 
         <ul>
             <li>
                 <a class="bold" href="{{ $design->url('user','setting','delete','nodelete') }}">
-                    {lang 'No, I changed my mind and want to stay with you! 🎉'}
+                    No, mantener mi cuenta activa
                 </a>
             </li>
             <li>
                 <a href="{{ $design->url('user','setting','delete','yesdelete') }}">
-                    {lang 'Yes, I really want to delete my account'}
+                    Sí, continuar con la solicitud de eliminación
                 </a>
             </li>
         </ul>

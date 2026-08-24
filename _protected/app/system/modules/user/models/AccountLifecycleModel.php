@@ -20,6 +20,7 @@ final class AccountLifecycleModel
     public const STATE_ACTIVE = 'active';
     public const STATE_DELETION_PENDING = 'deletion_pending';
     public const STATE_INACTIVE_DEACTIVATED = 'inactive_deactivated';
+    public const STATE_MANUAL_DEACTIVATED = 'manual_deactivated';
 
     private const TABLE = 'account_lifecycle';
     private const REMINDER_TABLE = 'account_lifecycle_reminders';
@@ -33,7 +34,7 @@ final class AccountLifecycleModel
             . "VALUES (:profileId, 'deletion_pending', NOW(), DATE_ADD(NOW(), INTERVAL 90 DAY), :recoveryTokenHash, NOW(), NOW()) "
             . 'ON DUPLICATE KEY UPDATE state = VALUES(state), deleteRequestedAt = VALUES(deleteRequestedAt), '
             . 'deleteScheduledAt = VALUES(deleteScheduledAt), recoveryTokenHash = VALUES(recoveryTokenHash), '
-            . 'inactiveDeactivatedAt = NULL, updatedAt = NOW()'
+            . 'inactiveDeactivatedAt = NULL, manualDeactivatedAt = NULL, updatedAt = NOW()'
         );
         $rStmt->bindValue(':profileId', $profileId, \PDO::PARAM_INT);
         $rStmt->bindValue(':recoveryTokenHash', $recoveryTokenHash, \PDO::PARAM_STR);
@@ -50,7 +51,7 @@ final class AccountLifecycleModel
             . 'FROM' . Db::prefix(self::TABLE) . 'AS l '
             . 'INNER JOIN' . Db::prefix(DbTableName::MEMBER) . 'AS m ON m.profileId = l.profileId '
             . 'WHERE l.recoveryTokenHash = :recoveryTokenHash '
-            . "AND l.state IN ('deletion_pending', 'inactive_deactivated') LIMIT 1"
+            . "AND l.state IN ('deletion_pending', 'inactive_deactivated', 'manual_deactivated') LIMIT 1"
         );
         $rStmt->bindValue(':recoveryTokenHash', $recoveryTokenHash, \PDO::PARAM_STR);
         $rStmt->execute();
@@ -78,7 +79,7 @@ final class AccountLifecycleModel
             $rLifecycle = $oDb->prepare(
                 'UPDATE' . Db::prefix(self::TABLE) .
                 "SET state = 'active', deleteRequestedAt = NULL, deleteScheduledAt = NULL, recoveryTokenHash = NULL, "
-                . 'inactiveDeactivatedAt = NULL, updatedAt = NOW() '
+                . 'inactiveDeactivatedAt = NULL, manualDeactivatedAt = NULL, updatedAt = NOW() '
                 . 'WHERE profileId = :profileId LIMIT 1'
             );
             $rLifecycle->bindValue(':profileId', $profileId, \PDO::PARAM_INT);
@@ -180,7 +181,44 @@ final class AccountLifecycleModel
                 '(profileId, state, recoveryTokenHash, inactiveDeactivatedAt, createdAt, updatedAt) '
                 . "VALUES (:profileId, 'inactive_deactivated', :recoveryTokenHash, NOW(), NOW(), NOW()) "
                 . "ON DUPLICATE KEY UPDATE state = 'inactive_deactivated', recoveryTokenHash = VALUES(recoveryTokenHash), "
-                . 'inactiveDeactivatedAt = NOW(), updatedAt = NOW()'
+                . 'deleteRequestedAt = NULL, deleteScheduledAt = NULL, inactiveDeactivatedAt = NOW(), '
+                . 'manualDeactivatedAt = NULL, updatedAt = NOW()'
+            );
+            $rLifecycle->bindValue(':profileId', $profileId, \PDO::PARAM_INT);
+            $rLifecycle->bindValue(':recoveryTokenHash', $recoveryTokenHash, \PDO::PARAM_STR);
+            $rLifecycle->execute();
+            Db::free($rLifecycle);
+
+            $rMember = $oDb->prepare(
+                'UPDATE' . Db::prefix(DbTableName::MEMBER) .
+                'SET active = 0 WHERE profileId = :profileId LIMIT 1'
+            );
+            $rMember->bindValue(':profileId', $profileId, \PDO::PARAM_INT);
+            $rMember->execute();
+            Db::free($rMember);
+
+            return $oDb->commit();
+        } catch (\Throwable $oException) {
+            if ($oDb->inTransaction()) {
+                $oDb->rollBack();
+            }
+            throw $oException;
+        }
+    }
+
+    public function deactivateManually(int $profileId, string $recoveryTokenHash): bool
+    {
+        $oDb = Db::getInstance();
+        $oDb->beginTransaction();
+
+        try {
+            $rLifecycle = $oDb->prepare(
+                'INSERT INTO' . Db::prefix(self::TABLE) .
+                '(profileId, state, recoveryTokenHash, manualDeactivatedAt, createdAt, updatedAt) '
+                . "VALUES (:profileId, 'manual_deactivated', :recoveryTokenHash, NOW(), NOW(), NOW()) "
+                . "ON DUPLICATE KEY UPDATE state = 'manual_deactivated', recoveryTokenHash = VALUES(recoveryTokenHash), "
+                . 'deleteRequestedAt = NULL, deleteScheduledAt = NULL, inactiveDeactivatedAt = NULL, '
+                . 'manualDeactivatedAt = NOW(), updatedAt = NOW()'
             );
             $rLifecycle->bindValue(':profileId', $profileId, \PDO::PARAM_INT);
             $rLifecycle->bindValue(':recoveryTokenHash', $recoveryTokenHash, \PDO::PARAM_STR);

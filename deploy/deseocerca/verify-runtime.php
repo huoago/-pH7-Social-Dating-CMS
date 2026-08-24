@@ -49,6 +49,20 @@ foreach (
     $checkTable($sTable);
 }
 
+try {
+    $rStmt = $oDb->query('SHOW COLUMNS FROM' . Db::prefix('account_lifecycle') . "LIKE 'state'");
+    $oStateColumn = $rStmt->fetch(PDO::FETCH_OBJ);
+    Db::free($rStmt);
+    $sStateType = is_object($oStateColumn) && isset($oStateColumn->Type) ? (string)$oStateColumn->Type : '';
+    $record(
+        'lifecycle:manual_deactivated',
+        str_contains($sStateType, "'manual_deactivated'"),
+        $sStateType !== '' ? $sStateType : 'state column missing'
+    );
+} catch (Throwable $oException) {
+    $record('lifecycle:manual_deactivated', false, $oException->getMessage());
+}
+
 $aExpectedSettings = [
     'siteName' => 'DeseoCerca',
     'defaultLanguage' => 'es_ES',

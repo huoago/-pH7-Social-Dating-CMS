@@ -40,7 +40,7 @@ jobs:
           python3 -m py_compile deploy/deseocerca/update-env.py deploy/deseocerca/public-smoke.py
           systemd-analyze calendar '*-*-* 03:20:00 America/Lima' >/dev/null
           docker compose run --rm --no-deps php sh -lc \
-            "php -l deploy/deseocerca/cli-bootstrap.php && php -l deploy/deseocerca/account-lifecycle.php && php -l deploy/deseocerca/verify-runtime.php && php -l _protected/app/system/modules/user/models/AccountLifecycleModel.php"
+            "php -l deploy/deseocerca/cli-bootstrap.php && php -l deploy/deseocerca/account-lifecycle.php && php -l deploy/deseocerca/verify-runtime.php && php -l _protected/app/system/modules/user/models/AccountLifecycleModel.php && php -l _protected/app/system/modules/user/forms/DeactivateAccountForm.php && php -l _protected/app/system/modules/user/forms/processing/DeactivateAccountFormProcess.php"
 
       - name: Exercise public-smoke HTTP client
         shell: bash
