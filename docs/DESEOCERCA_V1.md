@@ -38,7 +38,10 @@ Production apex/`www` DNS must remain unchanged until staging acceptance is comp
 - Photo albums and profile information.
 - Privacy controls.
 - Profile visitors and related profiles.
-- Account deactivation with a defined recovery/deletion lifecycle.
+- Voluntary account deletion enters a 90-day recoverable grace period before physical deletion.
+- Ordinary accounts inactive for 90 days are deactivated rather than automatically destroyed.
+- Inactivity reminders are sent at day 60 (30 days remaining), day 83 (7 days remaining), and every day from day 85 through day 89 (5, 4, 3, 2 and 1 day remaining).
+- A successful login starts a new inactivity cycle; reminder delivery is audit logged and idempotent per cycle.
 
 ### Communication
 
@@ -129,6 +132,7 @@ Pull-request CI covers:
 - staging Compose validation
 - staging image build
 - DeseoCerca maintenance/runtime PHP syntax
+- free-VM bootstrap shell syntax
 - Spanish locale presence
 - staging entrypoint syntax
 - runtime `_constants.php` persistence/restore behavior
@@ -138,21 +142,21 @@ A green CI result is necessary but is not equivalent to staging E2E acceptance.
 
 ## Deployment order
 
-The detailed operational runbook is `docs/DESEOCERCA_STAGING.md`.
+The detailed container runbook is `docs/DESEOCERCA_STAGING.md`.
+The preferred zero-monthly-cost OCI path is `docs/DESEOCERCA_FREE_OCI.md`.
 
-1. Obtain hosting-provider approval for the actual legal 18+ social/dating UGC model.
-2. Provision the staging VPS with Docker Engine/Compose and SSH-key access.
-3. Point only `staging.deseocerca.com` to the staging VPS; leave production apex/`www` unchanged.
-4. Configure the `DESEOCERCA_STAGING_*` GitHub Actions secrets.
-5. Dispatch `DeseoCerca Staging Deploy` with `apply_bootstrap=false` for the first infrastructure deployment.
-6. Complete the pH7 browser installer using MySQL host `db`, database/user `deseocerca`, prefix `ph7_`, and protected path `/var/www/html/_protected/`.
-7. Dispatch the staging workflow once with `apply_bootstrap=true` to apply the DeseoCerca bootstrap and run runtime verification.
-8. Configure and verify SMTP, then test activation and password-recovery email.
-9. Complete account, photo moderation, discovery, block, report, messaging, lifecycle and legal-page E2E acceptance.
-10. Confirm container replacement preserves database/application state and keeps `_install` unavailable.
-11. Complete the Legal Notice with the real operator identity, legal/tax details as applicable, legal address and final hosting provider.
-12. Obtain Peru legal review for production Terms/Privacy/Legal Notice.
-13. Enable production DNS for `deseocerca.com` and `www.deseocerca.com` only after all staging gates pass.
+1. Create/verify an eligible Oracle Cloud Free Tier account or another approved compatible host.
+2. Provision an Always Free staging VM with Docker/SSH access. The OCI runbook and cloud-init can automate almost all server setup after instance creation.
+3. Point only `staging.deseocerca.com` to the staging VM; leave production apex/`www` unchanged.
+4. Configure the `DESEOCERCA_STAGING_*` GitHub Actions secrets after the first VM is healthy.
+5. Complete the pH7 browser installer using MySQL host `db`, database/user `deseocerca`, prefix `ph7_`, and protected path `/var/www/html/_protected/`.
+6. Apply the guarded DeseoCerca bootstrap once and run runtime verification.
+7. Configure and verify SMTP, then test activation and password-recovery email.
+8. Complete account, photo moderation, discovery, block, report, messaging, lifecycle and legal-page E2E acceptance.
+9. Confirm container replacement preserves database/application state and keeps `_install` unavailable.
+10. Complete the Legal Notice with the real operator identity, legal/tax details as applicable, legal address and final hosting provider.
+11. Obtain Peru legal review for production Terms/Privacy/Legal Notice.
+12. Enable production DNS for `deseocerca.com` and `www.deseocerca.com` only after all staging gates pass.
 
 ## Current external production blockers
 
@@ -161,10 +165,10 @@ Code must not invent these values. They must be supplied and verified before lau
 - Legal name/entity operating DeseoCerca.
 - Applicable tax/registration identifier.
 - Legal address.
-- Final hosting-provider identity and written business-model approval.
+- Final hosting-provider identity and business-model acceptance.
 - Production SMTP sender/domain verification.
 - Final Peru legal review.
-- Staging VPS/SSH credentials and DNS record.
+- Staging VM/SSH credentials and DNS record.
 
 ## Next implementation milestones
 
