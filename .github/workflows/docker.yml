@@ -28,8 +28,10 @@ jobs:
       - name: Build development image
         run: docker compose build
 
-      - name: Validate DeseoCerca maintenance PHP syntax
+      - name: Validate DeseoCerca maintenance and deployment syntax
         run: |
+          bash -n deploy/deseocerca/free-vm-bootstrap.sh
+          bash -n deploy/deseocerca/apply-bootstrap.sh
           docker compose run --rm --no-deps php sh -lc \
             "php -l deploy/deseocerca/cli-bootstrap.php && php -l deploy/deseocerca/account-lifecycle.php && php -l deploy/deseocerca/verify-runtime.php && php -l _protected/app/system/modules/user/models/AccountLifecycleModel.php"
 
