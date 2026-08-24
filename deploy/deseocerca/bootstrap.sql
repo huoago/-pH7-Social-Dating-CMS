@@ -78,6 +78,25 @@ CREATE TABLE IF NOT EXISTS ph7_members_blocks (
     CONSTRAINT fk_dc_block_target FOREIGN KEY (blockedId) REFERENCES ph7_members(profileId) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Recoverable deletion and inactivity lifecycle. Explicit deletion requests are
+-- physically removed only after the 90-day recovery window has expired.
+CREATE TABLE IF NOT EXISTS ph7_account_lifecycle (
+    profileId int(10) unsigned NOT NULL,
+    state enum('active','deletion_pending','inactive_deactivated') NOT NULL DEFAULT 'active',
+    deleteRequestedAt datetime DEFAULT NULL,
+    deleteScheduledAt datetime DEFAULT NULL,
+    recoveryTokenHash char(64) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+    warning60SentAt datetime DEFAULT NULL,
+    warning83SentAt datetime DEFAULT NULL,
+    inactiveDeactivatedAt datetime DEFAULT NULL,
+    createdAt datetime NOT NULL,
+    updatedAt datetime NOT NULL,
+    PRIMARY KEY (profileId),
+    UNIQUE KEY recoveryTokenHash (recoveryTokenHash),
+    KEY lifecycleStateDue (state, deleteScheduledAt),
+    CONSTRAINT fk_dc_lifecycle_member FOREIGN KEY (profileId) REFERENCES ph7_members(profileId) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- Spanish-first SEO copy for the initial Peru landing page.
 INSERT INTO ph7_meta_main (
     langId, pageTitle, metaDescription, metaKeywords, headline, slogan, promoText,
