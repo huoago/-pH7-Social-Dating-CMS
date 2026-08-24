@@ -16,6 +16,8 @@ Planned canonical host: `https://deseocerca.com`
 
 The domain may remain registered with Alibaba Cloud. DNS can later be delegated to the selected production DNS/CDN provider without moving the registration.
 
+Production apex/`www` DNS must remain unchanged until staging acceptance is complete.
+
 ## V1 feature set
 
 ### Public discovery
@@ -36,6 +38,7 @@ The domain may remain registered with Alibaba Cloud. DNS can later be delegated 
 - Photo albums and profile information.
 - Privacy controls.
 - Profile visitors and related profiles.
+- Account deactivation with a defined recovery/deletion lifecycle.
 
 ### Communication
 
@@ -43,6 +46,8 @@ The domain may remain registered with Alibaba Cloud. DNS can later be delegated 
 - Instant messaging.
 - Friend/contact relationships.
 - Notifications.
+- Server-side block enforcement for private mail and instant messaging.
+- Messaging cooldown and message-length limits.
 
 ### Trust and safety
 
@@ -53,6 +58,8 @@ The domain may remain registered with Alibaba Cloud. DNS can later be delegated 
 - Login-attempt protection.
 - Admin moderation queues.
 - Audit-friendly admin operations.
+- Inactive/deactivated profiles hidden from public profile/discovery flows.
+- Spanish Terms, Privacy, Legal Notice and Contact/Safety entry points.
 
 ### Business features kept for later activation
 
@@ -89,67 +96,96 @@ Initial design direction:
 
 ## Peru localization
 
-Spanish is installed from the upstream pH7 Internationalization project with `deploy/deseocerca/install-spanish.sh`. The script pins the upstream revision and changes runtime timezone/date defaults to Lima/Peru while retaining the compatible `es_ES` locale identifier.
+Spanish is pinned from the upstream pH7 Internationalization project and is now installed during the staging image build. Runtime timezone/date defaults are adjusted to Lima/Peru while retaining the compatible `es_ES` locale identifier.
 
 The translations should still be reviewed for natural Peruvian Spanish before public launch. The bootstrap SQL registers Spanish, makes it the default UI language and adds Peru-focused Spanish SEO metadata.
 
-## Production baseline
+## Current deployment architecture
 
-pH7Builder 18.x currently requires:
+The staging path is containerized and reproducible:
 
-- PHP 8.2+
-- MySQL 8.0+
-- nginx or Apache with URL rewriting
-- HTTPS
-- SMTP transport for account email
+- Docker Compose
+- MySQL 8.0 with a persistent database volume
+- PHP 8.2 + Apache application image
+- Caddy edge container for HTTP/HTTPS
+- account-lifecycle sidecar
+- persistent runtime volume for installer-generated `_constants.php`
+- persistent application configuration/data/module volumes
+- GitHub Actions SSH deployment workflow
 
-Recommended first deployment:
+The application entrypoint restores `_constants.php` after container replacement. Once an installed runtime is detected it removes `_install` on every start so rebuilding the image does not reopen the installer.
 
-- Ubuntu LTS VPS
-- nginx
-- PHP 8.2 FPM
-- MySQL 8.0
-- Let's Encrypt TLS
-- Daily database backup plus encrypted off-server backup
-- Separate SMTP provider
+Spanish/Lima localization is part of the built staging image rather than an untracked post-deploy mutation.
 
-Do not deploy production media or secrets into GitHub.
+## CI baseline
+
+Pull-request CI covers:
+
+- Composer validation
+- PHPUnit test matrix
+- PHPStan
+- development Docker Compose
+- development image build and installer response
+- staging Compose validation
+- staging image build
+- DeseoCerca maintenance/runtime PHP syntax
+- Spanish locale presence
+- staging entrypoint syntax
+- runtime `_constants.php` persistence/restore behavior
+- installer-directory removal for an installed runtime
+
+A green CI result is necessary but is not equivalent to staging E2E acceptance.
 
 ## Deployment order
 
-1. Provision a clean VPS whose provider has approved the intended adult social/dating content and UGC model.
-2. Point a staging hostname to the VPS.
-3. Install PHP 8.2+, MySQL 8.0 and nginx.
-4. Deploy the `deseocerca-v1` branch.
-5. Run the pH7Builder browser installer with a one-time install token.
-6. Remove/disable installer access.
-7. Run `bash deploy/deseocerca/install-spanish.sh` from the application root.
-8. Run `deploy/deseocerca/bootstrap.sql` against the installed database.
-9. Configure `PH7_MAILER_DSN` in the server environment and test activation email.
-10. Review the Spanish UI in staging and adjust Peru-specific wording.
-11. Complete manual account, photo, report, block, message and admin moderation tests.
-12. Enable production DNS for `deseocerca.com` only after the staging checks pass.
+The detailed operational runbook is `docs/DESEOCERCA_STAGING.md`.
+
+1. Obtain hosting-provider approval for the actual legal 18+ social/dating UGC model.
+2. Provision the staging VPS with Docker Engine/Compose and SSH-key access.
+3. Point only `staging.deseocerca.com` to the staging VPS; leave production apex/`www` unchanged.
+4. Configure the `DESEOCERCA_STAGING_*` GitHub Actions secrets.
+5. Dispatch `DeseoCerca Staging Deploy` with `apply_bootstrap=false` for the first infrastructure deployment.
+6. Complete the pH7 browser installer using MySQL host `db`, database/user `deseocerca`, prefix `ph7_`, and protected path `/var/www/html/_protected/`.
+7. Dispatch the staging workflow once with `apply_bootstrap=true` to apply the DeseoCerca bootstrap and run runtime verification.
+8. Configure and verify SMTP, then test activation and password-recovery email.
+9. Complete account, photo moderation, discovery, block, report, messaging, lifecycle and legal-page E2E acceptance.
+10. Confirm container replacement preserves database/application state and keeps `_install` unavailable.
+11. Complete the Legal Notice with the real operator identity, legal/tax details as applicable, legal address and final hosting provider.
+12. Obtain Peru legal review for production Terms/Privacy/Legal Notice.
+13. Enable production DNS for `deseocerca.com` and `www.deseocerca.com` only after all staging gates pass.
+
+## Current external production blockers
+
+Code must not invent these values. They must be supplied and verified before launch:
+
+- Legal name/entity operating DeseoCerca.
+- Applicable tax/registration identifier.
+- Legal address.
+- Final hosting-provider identity and written business-model approval.
+- Production SMTP sender/domain verification.
+- Final Peru legal review.
+- Staging VPS/SSH credentials and DNS record.
 
 ## Next implementation milestones
 
-### Sprint 1 — launch foundation
+### Staging acceptance
 
-- Spanish localization review.
-- Peru/Lima-first location defaults.
-- Registration/onboarding cleanup.
-- Modern home/discovery layout.
-- Profile card redesign.
-- Account/profile photo moderation workflow.
+- First real staging deployment.
+- First browser installation and one-time bootstrap.
+- HTTPS and email verification.
+- Full E2E acceptance across user and moderator flows.
+- Mobile/responsive review on the live staging URL.
 
-### Sprint 2 — safety and communication
+### Product maturity after staging baseline
 
-- Block/report entry points on every profile and conversation.
-- Messaging anti-spam limits.
-- Conversation empty/error states.
-- Moderator history and audit view.
+- Peru/Lima discovery tuning using real staging data.
+- Registration/onboarding copy cleanup.
+- Profile card and discovery UX polish.
+- Moderation queue UX refinement.
+- Conversation empty/error-state polish.
 - Verified-profile workflow.
 
-### Sprint 3 — monetization readiness
+### Monetization readiness
 
 - Featured placement.
 - Boost inventory.
@@ -161,4 +197,4 @@ Do not deploy production media or secrets into GitHub.
 
 The pH7Builder fork is used because it already contains mature dating/social logic and is MIT licensed. Upstream copyright and license files must remain intact. DeseoCerca-specific work should stay isolated on the `deseocerca-v1` branch until it has passed CI and staging acceptance.
 
-CI was explicitly re-triggered after GitHub Actions was enabled on the fork.
+PR #1 should remain draft until staging E2E, operational and legal launch gates are complete.
