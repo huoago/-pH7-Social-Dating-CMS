@@ -26,19 +26,33 @@ class UserModel extends UserCoreModel
 
     /**
      * Public member profiles must be in the normal active state. This keeps
-     * deletion-pending and inactivity-deactivated accounts out of direct URLs
-     * while admin tooling can still use the core model when necessary.
+     * deletion-pending and deactivated accounts out of direct URLs while admin
+     * tooling can still use the core model when necessary.
+     *
+     * Do not trust the cached profile object's active flag for this security
+     * decision: lifecycle changes can happen between cache refreshes. Read the
+     * current active value directly from the member row on every public profile
+     * request, then mirror it onto the returned object.
      */
     public function readProfile($iProfileId, $sTable = DbTableName::MEMBER)
     {
         $mProfile = parent::readProfile($iProfileId, $sTable);
 
-        if (
-            $sTable === DbTableName::MEMBER
-            && $mProfile
-            && (int)$mProfile->active !== RegistrationCore::NO_ACTIVATION
-        ) {
-            return false;
+        if ($sTable === DbTableName::MEMBER && $mProfile) {
+            $rStmt = Db::getInstance()->prepare(
+                'SELECT active FROM' . Db::prefix(DbTableName::MEMBER) .
+                'WHERE profileId = :profileId LIMIT 1'
+            );
+            $rStmt->bindValue(':profileId', (int)$iProfileId, \PDO::PARAM_INT);
+            $rStmt->execute();
+            $mActive = $rStmt->fetchColumn();
+            Db::free($rStmt);
+
+            if ($mActive === false || (int)$mActive !== RegistrationCore::NO_ACTIVATION) {
+                return false;
+            }
+
+            $mProfile->active = (int)$mActive;
         }
 
         return $mProfile;
