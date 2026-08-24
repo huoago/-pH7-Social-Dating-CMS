@@ -99,7 +99,6 @@ jobs:
           python3 - <<'PY' > /tmp/deseocerca-approval.json
           import json
           import os
-
           print(json.dumps({
               "approval_type": os.environ["APPROVAL_TYPE"],
               "approved_by": os.environ["APPROVED_BY"],
@@ -107,7 +106,7 @@ jobs:
           }))
           PY
           ssh -i ~/.ssh/deseocerca_approval -p "$port" "$SSH_USER@$HOST" \
-            "sudo -n DESEOCERCA_DIR='$REMOTE_DIR' python3 '$REMOTE_DIR/deploy/deseocerca/record-production-approval.py'" \
+            "sudo -n /bin/bash '$REMOTE_DIR/deploy/deseocerca/root-ops.sh' record-approval" \
             < /tmp/deseocerca-approval.json
           rm -f /tmp/deseocerca-approval.json
 
