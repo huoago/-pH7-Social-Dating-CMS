@@ -36,7 +36,8 @@ jobs:
           bash -n deploy/deseocerca/backup.sh
           bash -n deploy/deseocerca/restore-backup.sh
           bash -n deploy/deseocerca/host-preflight.sh
-          python3 -m py_compile deploy/deseocerca/update-env.py
+          bash -n deploy/deseocerca/release-gate.sh
+          python3 -m py_compile deploy/deseocerca/update-env.py deploy/deseocerca/public-smoke.py
           systemd-analyze calendar '*-*-* 03:20:00 America/Lima' >/dev/null
           docker compose run --rm --no-deps php sh -lc \
             "php -l deploy/deseocerca/cli-bootstrap.php && php -l deploy/deseocerca/account-lifecycle.php && php -l deploy/deseocerca/verify-runtime.php && php -l _protected/app/system/modules/user/models/AccountLifecycleModel.php"

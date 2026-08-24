@@ -1,0 +1,108 @@
+name: DeseoCerca Release Gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_host:
+        description: Public DNS hostname to verify (for example staging.deseocerca.com)
+        required: true
+        type: string
+      mode:
+        description: Gate strictness
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
+      refresh_backup:
+        description: Create a fresh encrypted backup before evaluating the gate
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deseocerca-release-gate
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      STAGING_HOST: ${{ secrets.DESEOCERCA_STAGING_HOST }}
+      STAGING_USER: ${{ secrets.DESEOCERCA_STAGING_USER }}
+      STAGING_PORT: ${{ secrets.DESEOCERCA_STAGING_PORT }}
+      STAGING_SSH_KEY: ${{ secrets.DESEOCERCA_STAGING_SSH_KEY }}
+      STAGING_KNOWN_HOSTS: ${{ secrets.DESEOCERCA_STAGING_KNOWN_HOSTS }}
+      REMOTE_DIR: /opt/deseocerca-staging
+
+    steps:
+      - name: Validate release-gate inputs and secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(STAGING_HOST STAGING_USER STAGING_SSH_KEY)
+          for name in "${required[@]}"; do
+            test -n "${!name:-}" || { echo "Missing required secret: $name"; exit 1; }
+          done
+          target='${{ inputs.target_host }}'
+          [[ "$target" =~ ^[A-Za-z0-9.-]+$ ]] || { echo 'target_host is invalid.'; exit 1; }
+          port="${STAGING_PORT:-22}"
+          [[ "$port" =~ ^[0-9]+$ ]] && [ "$port" -ge 1 ] && [ "$port" -le 65535 ] || {
+            echo 'STAGING_PORT is invalid.'; exit 1;
+          }
+
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          port="${STAGING_PORT:-22}"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/deseocerca_staging
+          chmod 600 ~/.ssh/deseocerca_staging
+          if [ -n "${STAGING_KNOWN_HOSTS:-}" ]; then
+            printf '%s\n' "$STAGING_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -T 10 -p "$port" -H "$STAGING_HOST" > ~/.ssh/known_hosts
+          fi
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Verify remote revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          port="${STAGING_PORT:-22}"
+          remote_sha="$(ssh -i ~/.ssh/deseocerca_staging -p "$port" "$STAGING_USER@$STAGING_HOST" \
+            "cd '$REMOTE_DIR' && git rev-parse HEAD")"
+          if [ "$remote_sha" != "$GITHUB_SHA" ]; then
+            echo "Remote staging revision $remote_sha does not match workflow revision $GITHUB_SHA."
+            echo "Run DeseoCerca Staging Deploy first."
+            exit 1
+          fi
+
+      - name: Refresh encrypted backup
+        if: ${{ inputs.refresh_backup }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          port="${STAGING_PORT:-22}"
+          ssh -i ~/.ssh/deseocerca_staging -p "$port" "$STAGING_USER@$STAGING_HOST" \
+            "sudo -n DESEOCERCA_DIR='$REMOTE_DIR' bash '$REMOTE_DIR/deploy/deseocerca/backup.sh'"
+
+      - name: Evaluate release gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          port="${STAGING_PORT:-22}"
+          ssh -i ~/.ssh/deseocerca_staging -p "$port" "$STAGING_USER@$STAGING_HOST" \
+            "sudo -n DESEOCERCA_DIR='$REMOTE_DIR' DESEOCERCA_GATE_MODE='${{ inputs.mode }}' \
+             bash '$REMOTE_DIR/deploy/deseocerca/release-gate.sh' '${{ inputs.target_host }}'"
+
+      - name: Remove temporary SSH key
+        if: always()
+        shell: bash
+        run: rm -f ~/.ssh/deseocerca_staging
