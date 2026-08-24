@@ -21,15 +21,28 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 1
 fi
 
-set -a
-# Generated DeseoCerca values are shell-safe hex/domain strings.
-# shellcheck disable=SC1090
-. "$ENV_FILE"
-set +a
+# Read only the exact MySQL keys required by this job. Do not source the Compose
+# .env as shell code: SMTP DSNs can legitimately contain shell metacharacters.
+read_env_value() {
+  local key="$1"
+  local line
+  line="$(grep -m1 -E "^${key}=" "$ENV_FILE" || true)"
+  [ -n "$line" ] || return 1
+  printf '%s' "${line#*=}"
+}
 
-: "${MYSQL_DATABASE:?MYSQL_DATABASE is required}"
-: "${MYSQL_USER:?MYSQL_USER is required}"
-: "${MYSQL_PASSWORD:?MYSQL_PASSWORD is required}"
+MYSQL_DATABASE="$(read_env_value MYSQL_DATABASE)" || { echo 'MYSQL_DATABASE is missing.' >&2; exit 1; }
+MYSQL_USER="$(read_env_value MYSQL_USER)" || { echo 'MYSQL_USER is missing.' >&2; exit 1; }
+MYSQL_PASSWORD="$(read_env_value MYSQL_PASSWORD)" || { echo 'MYSQL_PASSWORD is missing.' >&2; exit 1; }
+
+if [[ ! "$MYSQL_DATABASE" =~ ^[A-Za-z0-9_]+$ || ! "$MYSQL_USER" =~ ^[A-Za-z0-9_]+$ ]]; then
+  echo "Unsafe MySQL database/user value in $ENV_FILE." >&2
+  exit 1
+fi
+if [[ ! "$RETENTION_DAYS" =~ ^[0-9]+$ ]]; then
+  echo "DESEOCERCA_BACKUP_RETENTION_DAYS must be numeric." >&2
+  exit 1
+fi
 
 install -d -m 0700 "$BACKUP_DIR"
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
