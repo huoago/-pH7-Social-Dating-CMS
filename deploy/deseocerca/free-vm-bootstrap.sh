@@ -10,6 +10,7 @@ BRANCH="deseocerca-v1"
 REMOTE_DIR="/opt/deseocerca-staging"
 ENV_FILE="$REMOTE_DIR/.env"
 SECRETS_FILE="/root/deseocerca-staging-secrets.txt"
+BACKUP_PASSPHRASE_FILE="/root/deseocerca-backup-passphrase"
 STAGING_SITE_ADDRESS="${STAGING_SITE_ADDRESS:-:80}"
 MAILER_DSN="${PH7_MAILER_DSN:-}"
 
@@ -105,6 +106,14 @@ EOF
   chmod 600 "$SECRETS_FILE"
 fi
 
+# Generate a dedicated backup encryption key only once. It is intentionally
+# separate from the MySQL and SSH credentials.
+if [ ! -s "$BACKUP_PASSPHRASE_FILE" ]; then
+  umask 077
+  openssl rand -base64 48 > "$BACKUP_PASSPHRASE_FILE"
+  chmod 600 "$BACKUP_PASSPHRASE_FILE"
+fi
+
 cd "$REMOTE_DIR"
 docker compose --env-file .env -f deploy/deseocerca/compose.staging.yml \
   up -d --build --remove-orphans
@@ -135,12 +144,46 @@ for attempt in $(seq 1 30); do
   sleep 3
 done
 
+# Install an encrypted daily local-backup timer. Production should additionally
+# replicate these encrypted files to private off-VM storage.
+cat > /etc/systemd/system/deseocerca-backup.service <<EOF
+[Unit]
+Description=DeseoCerca encrypted backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash $REMOTE_DIR/deploy/deseocerca/backup.sh
+User=root
+Group=root
+Nice=10
+EOF
+
+cat > /etc/systemd/system/deseocerca-backup.timer <<'EOF'
+[Unit]
+Description=Run DeseoCerca encrypted backup daily
+
+[Timer]
+OnCalendar=*-*-* 03:20:00 America/Lima
+Persistent=true
+RandomizedDelaySec=10m
+Unit=deseocerca-backup.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now deseocerca-backup.timer
+
 cat <<EOF
 
 DeseoCerca free-VM bootstrap completed.
 
 Application directory: $REMOTE_DIR
 Generated DB secrets: $SECRETS_FILE
+Backup encryption key: $BACKUP_PASSPHRASE_FILE
 Architecture: $(uname -m)
 Site binding: $STAGING_SITE_ADDRESS
 
@@ -153,4 +196,6 @@ Next:
    cd $REMOTE_DIR && bash deploy/deseocerca/apply-bootstrap.sh
 5. Then point staging.deseocerca.com to this VM and set STAGING_SITE_ADDRESS
    to staging.deseocerca.com for automatic HTTPS via Caddy.
+6. Copy the backup encryption key to a separate secure location. Losing the key
+   makes encrypted backups unrecoverable.
 EOF
