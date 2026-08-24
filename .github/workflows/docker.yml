@@ -31,7 +31,7 @@ jobs:
       - name: Validate DeseoCerca maintenance PHP syntax
         run: |
           docker compose run --rm --no-deps php sh -lc \
-            "php -l deploy/deseocerca/cli-bootstrap.php && php -l deploy/deseocerca/account-lifecycle.php && php -l _protected/app/system/modules/user/models/AccountLifecycleModel.php"
+            "php -l deploy/deseocerca/cli-bootstrap.php && php -l deploy/deseocerca/account-lifecycle.php && php -l deploy/deseocerca/verify-runtime.php && php -l _protected/app/system/modules/user/models/AccountLifecycleModel.php"
 
       - name: Validate staging Compose configuration
         env:
@@ -43,19 +43,19 @@ jobs:
       - name: Build staging image
         run: docker build --file deploy/deseocerca/Dockerfile.staging --tag deseocerca-staging-ci .
 
-      - name: Validate staging entrypoint and runtime persistence
+      - name: Validate staging locale, entrypoint, and runtime persistence
         run: |
           docker run --rm --entrypoint sh deseocerca-staging-ci -lc \
-            "sh -n /usr/local/bin/deseocerca-entrypoint && php -l deploy/deseocerca/account-lifecycle.php"
+            "sh -n /usr/local/bin/deseocerca-entrypoint && php -l deploy/deseocerca/account-lifecycle.php && php -l deploy/deseocerca/verify-runtime.php && test -s _protected/app/langs/es_ES/LC_MESSAGES/global.mo && grep -q 'timezone = \"America/Lima\"' _protected/app/langs/es_ES/config/config.ini"
           docker volume create deseocerca-ci-runtime >/dev/null
           docker run --rm \
             -v deseocerca-ci-runtime:/var/lib/deseocerca/runtime \
             deseocerca-staging-ci \
-            sh -lc "printf '%s\n' '<?php define(\"DESEOCERCA_CI\", true);' > /var/www/html/_constants.php; sleep 6"
+            sh -lc "test -d /var/www/html/_install; printf '%s\n' '<?php define(\"DESEOCERCA_CI\", true);' > /var/www/html/_constants.php; sleep 6; test ! -d /var/www/html/_install"
           docker run --rm \
             -v deseocerca-ci-runtime:/var/lib/deseocerca/runtime \
             deseocerca-staging-ci \
-            sh -lc "grep -q DESEOCERCA_CI /var/www/html/_constants.php"
+            sh -lc "grep -q DESEOCERCA_CI /var/www/html/_constants.php && test ! -d /var/www/html/_install"
           docker volume rm deseocerca-ci-runtime >/dev/null
 
       - name: Start development stack
