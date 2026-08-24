@@ -11,6 +11,7 @@ REMOTE_DIR="/opt/deseocerca-staging"
 ENV_FILE="$REMOTE_DIR/.env"
 SECRETS_FILE="/root/deseocerca-staging-secrets.txt"
 BACKUP_PASSPHRASE_FILE="/root/deseocerca-backup-passphrase"
+FIRST_INSTALL_FILE="/root/deseocerca-first-install.txt"
 STAGING_SITE_ADDRESS="${STAGING_SITE_ADDRESS:-:80}"
 MAILER_DSN="${PH7_MAILER_DSN:-}"
 DEPLOY_USER="${DESEOCERCA_DEPLOY_USER:-ubuntu}"
@@ -176,6 +177,10 @@ for attempt in $(seq 1 30); do
   sleep 3
 done
 
+# Prepare a root-only first-install sheet and persist the installer token hash so
+# rebuilding the app container before installation does not invalidate access.
+bash "$REMOTE_DIR/deploy/deseocerca/prepare-first-install.sh"
+
 # Install an encrypted daily local-backup timer. Production should additionally
 # replicate these encrypted files to private off-VM storage.
 cat > /etc/systemd/system/deseocerca-backup.service <<EOF
@@ -215,6 +220,7 @@ DeseoCerca free-VM bootstrap completed.
 
 Application directory: $REMOTE_DIR
 Generated DB secrets: $SECRETS_FILE
+Protected first-install sheet: $FIRST_INSTALL_FILE
 Backup encryption key: $BACKUP_PASSPHRASE_FILE
 Deployment user: ${DEPLOY_USER:-root}
 Architecture: $(uname -m)
@@ -222,13 +228,14 @@ Site binding: $STAGING_SITE_ADDRESS
 
 Next:
 1. Ensure your cloud network/security list allows inbound TCP 80 and 443.
-2. Open the VM public IP in a browser and complete the first pH7 installation.
-3. Use database host 'db', database 'deseocerca', user 'deseocerca', and the
-   generated password from $SECRETS_FILE. Keep the table prefix exactly 'ph7_'.
+2. Open the VM public IP in a browser and follow the root-only first-install sheet.
+3. Keep the database table prefix exactly 'ph7_'.
 4. After installation run:
    cd $REMOTE_DIR && bash deploy/deseocerca/apply-bootstrap.sh
 5. Then point staging.deseocerca.com to this VM and set STAGING_SITE_ADDRESS
    to staging.deseocerca.com for automatic HTTPS via Caddy.
-6. Copy the backup encryption key to a separate secure location. Losing the key
+6. Delete $FIRST_INSTALL_FILE after installation and copy any credentials you still
+   need to a separate password manager.
+7. Copy the backup encryption key to a separate secure location. Losing the key
    makes encrypted backups unrecoverable.
 EOF

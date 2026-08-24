@@ -31,6 +31,7 @@ jobs:
       - name: Validate DeseoCerca maintenance and deployment syntax
         run: |
           bash -n deploy/deseocerca/free-vm-bootstrap.sh
+          bash -n deploy/deseocerca/prepare-first-install.sh
           bash -n deploy/deseocerca/apply-bootstrap.sh
           bash -n deploy/deseocerca/backup.sh
           bash -n deploy/deseocerca/restore-backup.sh
@@ -71,7 +72,7 @@ jobs:
       - name: Build staging image
         run: docker build --file deploy/deseocerca/Dockerfile.staging --tag deseocerca-staging-ci .
 
-      - name: Validate staging locale, entrypoint, and runtime persistence
+      - name: Validate staging locale, installer-token persistence, and runtime persistence
         run: |
           docker run --rm --entrypoint sh deseocerca-staging-ci -lc \
             "sh -n /usr/local/bin/deseocerca-entrypoint && php -l deploy/deseocerca/account-lifecycle.php && php -l deploy/deseocerca/verify-runtime.php && test -s _protected/app/langs/es_ES/LC_MESSAGES/global.mo && grep -q 'timezone = \"America/Lima\"' _protected/app/langs/es_ES/config/config.ini"
@@ -79,11 +80,15 @@ jobs:
           docker run --rm \
             -v deseocerca-ci-runtime:/var/lib/deseocerca/runtime \
             deseocerca-staging-ci \
-            sh -lc "test -d /var/www/html/_install; printf '%s\n' '<?php define(\"DESEOCERCA_CI\", true);' > /var/www/html/_constants.php; sleep 6; test ! -d /var/www/html/_install"
+            sh -lc "test -d /var/www/html/_install; php _install/create-install-token.php >/tmp/install-token.out; chown www-data:www-data /var/www/html/_install/data/caches/install-token.hash; sleep 6; test -s /var/lib/deseocerca/runtime/install-token.hash"
           docker run --rm \
             -v deseocerca-ci-runtime:/var/lib/deseocerca/runtime \
             deseocerca-staging-ci \
-            sh -lc "grep -q DESEOCERCA_CI /var/www/html/_constants.php && test ! -d /var/www/html/_install"
+            sh -lc "test -s /var/www/html/_install/data/caches/install-token.hash; printf '%s\n' '<?php define(\"DESEOCERCA_CI\", true);' > /var/www/html/_constants.php; sleep 6; test ! -d /var/www/html/_install; test ! -e /var/lib/deseocerca/runtime/install-token.hash"
+          docker run --rm \
+            -v deseocerca-ci-runtime:/var/lib/deseocerca/runtime \
+            deseocerca-staging-ci \
+            sh -lc "grep -q DESEOCERCA_CI /var/www/html/_constants.php && test ! -d /var/www/html/_install && test ! -e /var/lib/deseocerca/runtime/install-token.hash"
           docker volume rm deseocerca-ci-runtime >/dev/null
 
       - name: Start development stack
