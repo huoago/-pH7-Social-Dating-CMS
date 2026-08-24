@@ -92,23 +92,36 @@ final class AccountLifecycleModel
         }
     }
 
-    public function getWarningCandidates(int $days, string $warningField): array
+    /**
+     * Return active accounts inside one inactivity-warning window.
+     *
+     * Example: 60..83 selects accounts inactive for at least 60 days but
+     * strictly less than 83 days, preventing two staged warnings on one run.
+     */
+    public function getWarningCandidates(int $minimumDays, int $maximumDays, string $warningField): array
     {
+        if ($minimumDays < 1 || $maximumDays <= $minimumDays) {
+            throw new \InvalidArgumentException('Invalid inactivity warning window.');
+        }
         if (!in_array($warningField, ['warning60SentAt', 'warning83SentAt'], true)) {
             throw new \InvalidArgumentException('Unsupported inactivity warning field.');
         }
 
-        $sCutoff = (new DateTimeImmutable('now'))->modify(sprintf('-%d days', $days))->format(UserCoreModel::DATETIME_FORMAT);
+        $oNow = new DateTimeImmutable('now');
+        $sWarningCutoff = $oNow->modify(sprintf('-%d days', $minimumDays))->format(UserCoreModel::DATETIME_FORMAT);
+        $sNextStageCutoff = $oNow->modify(sprintf('-%d days', $maximumDays))->format(UserCoreModel::DATETIME_FORMAT);
         $rStmt = Db::getInstance()->prepare(
             'SELECT m.profileId, m.email, m.username, m.firstName, m.lastActivity '
             . 'FROM' . Db::prefix(DbTableName::MEMBER) . 'AS m '
             . 'LEFT JOIN' . Db::prefix(self::TABLE) . 'AS l ON l.profileId = m.profileId '
-            . 'WHERE m.active = :active AND m.username <> :ghostUsername AND m.lastActivity <= :cutoff '
+            . 'WHERE m.active = :active AND m.username <> :ghostUsername '
+            . 'AND m.lastActivity <= :warningCutoff AND m.lastActivity > :nextStageCutoff '
             . "AND (l.state IS NULL OR l.state = 'active') AND l." . $warningField . ' IS NULL'
         );
         $rStmt->bindValue(':active', RegistrationCore::NO_ACTIVATION, \PDO::PARAM_INT);
         $rStmt->bindValue(':ghostUsername', PH7_GHOST_USERNAME, \PDO::PARAM_STR);
-        $rStmt->bindValue(':cutoff', $sCutoff, \PDO::PARAM_STR);
+        $rStmt->bindValue(':warningCutoff', $sWarningCutoff, \PDO::PARAM_STR);
+        $rStmt->bindValue(':nextStageCutoff', $sNextStageCutoff, \PDO::PARAM_STR);
         $rStmt->execute();
         $aRows = $rStmt->fetchAll(\PDO::FETCH_OBJ);
         Db::free($rStmt);
