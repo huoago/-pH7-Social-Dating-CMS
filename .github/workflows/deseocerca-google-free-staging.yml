@@ -58,6 +58,15 @@ jobs:
           esac
           [[ "$SSH_USER" =~ ^[a-z_][a-z0-9_-]*\$?$ ]] || { echo "Invalid SSH user."; exit 1; }
           [[ "$TIDB_HOST" =~ ^[A-Za-z0-9.-]+$ ]] || { echo "Invalid TiDB hostname."; exit 1; }
+
+          # pH7 currently contains one FULLTEXT index. TiDB Cloud Starter
+          # supports FULLTEXT in these AWS regions, so reject any other region
+          # before a deployment can begin.
+          if [[ ! "$TIDB_HOST" =~ \.(us-west-2|us-east-1|ap-northeast-1|eu-central-1|ap-southeast-1)\. ]]; then
+            echo "TiDB Cloud Starter must be in a FULLTEXT-supported AWS region (recommended: us-west-2)."
+            exit 1
+          fi
+
           database="${TIDB_DATABASE:-deseocerca}"
           [[ "$database" =~ ^[A-Za-z0-9_$-]{1,64}$ ]] || { echo "Invalid TiDB database."; exit 1; }
 
@@ -159,7 +168,7 @@ jobs:
                --host=db-tls --port=3306 --user=\"\$username\" \
                --connect-timeout=10 --execute=\"CREATE DATABASE IF NOT EXISTS \\\`\$database\\\` CHARACTER SET utf8mb4;\"; \
              \$compose ps; \
-             sudo -n DESEOCERCA_DIR='$REMOTE_DIR' bash deploy/deseocerca/prepare-first-install-free.sh"
+             sudo -n /bin/bash '$REMOTE_DIR/deploy/deseocerca/prepare-first-install-free.sh'"
 
       - name: Apply post-install bootstrap
         if: ${{ inputs.apply_bootstrap }}
@@ -168,7 +177,7 @@ jobs:
           set -euo pipefail
           port="${SSH_PORT:-22}"
           ssh -i ~/.ssh/deseocerca_free -p "$port" "$SSH_USER@$HOST" \
-            "set -e; cd '$REMOTE_DIR'; sudo -n DESEOCERCA_DIR='$REMOTE_DIR' bash deploy/deseocerca/apply-bootstrap-free.sh"
+            "set -e; cd '$REMOTE_DIR'; /bin/bash '$REMOTE_DIR/deploy/deseocerca/apply-bootstrap-free.sh'"
 
       - name: Free-tier runtime smoke
         shell: bash
