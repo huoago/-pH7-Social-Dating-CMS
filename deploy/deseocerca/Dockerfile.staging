@@ -31,6 +31,16 @@ COPY --chown=www-data:www-data . /var/www/html
 
 RUN composer install --no-interaction --no-progress --prefer-dist \
     && php -r 'foreach (["curl", "dom", "exif", "fileinfo", "gd", "iconv", "mbstring", "openssl", "pdo_mysql", "simplexml", "xml", "xmlwriter", "zip", "zlib"] as $extension) { if (!extension_loaded($extension)) { fwrite(STDERR, "Missing PHP extension: {$extension}\n"); exit(1); } }' \
+    && mkdir -p \
+        /var/www/html/_install/data/caches \
+        /var/www/html/_install/data/logs \
+        /var/www/html/_protected/app/configs \
+        /var/www/html/_protected/data/backup \
+        /var/www/html/_protected/data/cache \
+        /var/www/html/_protected/data/log \
+        /var/www/html/_protected/data/tmp \
+        /var/www/html/data \
+        /var/www/html/_repository/module \
     && find /var/www/html -type d -exec chmod 0755 {} + \
     && find /var/www/html -type f -exec chmod 0644 {} + \
     && find /var/www/html/_install/data/caches /var/www/html/_install/data/logs /var/www/html/_protected/app/configs /var/www/html/_protected/data /var/www/html/data /var/www/html/_repository/module -type d -exec chmod 0775 {} + \
