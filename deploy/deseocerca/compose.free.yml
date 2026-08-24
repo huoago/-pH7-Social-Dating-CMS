@@ -21,6 +21,9 @@ services:
         condition: service_healthy
     environment:
       TZ: America/Lima
+      PH7_TRUST_PROXY_HEADERS: "1"
+      PH7_CANONICAL_HOST: ${PH7_CANONICAL_HOST:-}
+      PH7_CANONICAL_SCHEME: ${PH7_CANONICAL_SCHEME:-https}
     volumes:
       - public_data:/var/www/html/data
       - protected_data:/var/www/html/_protected/data
@@ -53,6 +56,8 @@ services:
         condition: service_started
     environment:
       TZ: America/Lima
+      PH7_CANONICAL_HOST: ${PH7_CANONICAL_HOST:-}
+      PH7_CANONICAL_SCHEME: ${PH7_CANONICAL_SCHEME:-https}
     volumes:
       - public_data:/var/www/html/data
       - protected_data:/var/www/html/_protected/data
