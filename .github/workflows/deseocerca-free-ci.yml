@@ -33,6 +33,9 @@ jobs:
           bash -n deploy/deseocerca/release-gate.sh
           bash -n deploy/deseocerca/promote-production.sh
           bash -n deploy/deseocerca/rollback-production.sh
+          python3 -m py_compile deploy/deseocerca/automate-first-install.py
+          python3 -m py_compile deploy/deseocerca/update-env.py
+          python3 -m py_compile deploy/deseocerca/record-production-approval.py
 
       - name: Validate TiDB-compatible SQL baseline
         shell: bash
@@ -61,7 +64,9 @@ jobs:
       - name: Validate free-tier Compose configuration
         env:
           DESEOCERCA_APP_IMAGE: deseocerca-free:ci
-          STAGING_SITE_ADDRESS: :80
+          STAGING_SITE_ADDRESS: staging.deseocerca.com
+          PH7_CANONICAL_HOST: staging.deseocerca.com
+          PH7_CANONICAL_SCHEME: https
           TIDB_HOST: gateway01.us-west-2.prod.aws.tidbcloud.com
           TIDB_USERNAME: ci.root
           TIDB_PASSWORD: ci-not-a-real-password
@@ -76,16 +81,47 @@ jobs:
             echo "Free-tier Compose must not start a local MySQL database."
             exit 1
           fi
+          rendered="$(docker compose -f deploy/deseocerca/compose.free.yml config)"
+          grep -Fq 'PH7_CANONICAL_HOST: staging.deseocerca.com' <<< "$rendered"
+          grep -Fq 'PH7_CANONICAL_SCHEME: https' <<< "$rendered"
+          grep -Fq 'PH7_TRUST_PROXY_HEADERS: "1"' <<< "$rendered"
 
       - name: Verify MySQL client tooling used by backup and restore
         run: |
           docker run --rm mysql:8.0 mysqldump --version
           docker run --rm mysql:8.0 mysql --version
 
+      - name: Validate safe environment overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp)"
+          trap 'rm -f "$tmp"' EXIT
+          cat > "$tmp" <<'EOF'
+          DESEOCERCA_APP_IMAGE=deseocerca-free:current
+          STAGING_SITE_ADDRESS=:80
+          PH7_CANONICAL_HOST=
+          PH7_CANONICAL_SCHEME=https
+          TIDB_HOST=gateway01.us-west-2.prod.aws.tidbcloud.com
+          TIDB_USERNAME=ci.root
+          TIDB_PASSWORD=ci-secret
+          TIDB_DATABASE=deseocerca
+          PH7_MAILER_DSN=
+          EOF
+          chmod 600 "$tmp"
+          printf '%s\n' '{"STAGING_SITE_ADDRESS":"staging.deseocerca.com","PH7_CANONICAL_HOST":"staging.deseocerca.com","PH7_CANONICAL_SCHEME":"https","DESEOCERCA_APP_IMAGE":"deseocerca-free:ci"}' \
+            | python3 deploy/deseocerca/update-env.py "$tmp"
+          grep -Fxq 'STAGING_SITE_ADDRESS=staging.deseocerca.com' "$tmp"
+          grep -Fxq 'PH7_CANONICAL_HOST=staging.deseocerca.com' "$tmp"
+          grep -Fxq 'DESEOCERCA_APP_IMAGE=deseocerca-free:ci' "$tmp"
+          grep -Fxq 'TIDB_PASSWORD=ci-secret' "$tmp"
+          [ "$(stat -c '%a' "$tmp")" = 600 ]
+
       - name: Validate constrained root operations surface
         shell: bash
         run: |
           set -euo pipefail
-          grep -Fq 'Allowed actions: backup, gate, promote, rollback, record-approval, prepared-check, mark-verified' deploy/deseocerca/root-ops.sh
+          grep -Fq 'Allowed actions: auto-install, backup, gate, promote, rollback, record-approval, prepared-check, mark-verified' deploy/deseocerca/root-ops.sh
           ! grep -Eq 'NOPASSWD: ALL|/usr/bin/systemctl \*' deploy/deseocerca/google-free-vm-bootstrap.sh
           grep -Fq 'root-ops.sh *' deploy/deseocerca/google-free-vm-bootstrap.sh
+          grep -Fq 'restore-free.sh *' deploy/deseocerca/google-free-vm-bootstrap.sh
