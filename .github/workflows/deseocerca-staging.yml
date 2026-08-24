@@ -2,6 +2,12 @@ name: DeseoCerca Staging Deploy
 
 on:
   workflow_dispatch:
+    inputs:
+      apply_bootstrap:
+        description: Apply the guarded DeseoCerca post-install bootstrap before runtime verification
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -98,7 +104,16 @@ jobs:
              docker compose --env-file .env -f deploy/deseocerca/compose.staging.yml up -d --build --remove-orphans; \
              docker compose --env-file .env -f deploy/deseocerca/compose.staging.yml ps"
 
-      - name: Staging smoke check
+      - name: Apply DeseoCerca post-install bootstrap
+        if: ${{ inputs.apply_bootstrap }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          port="${STAGING_PORT:-22}"
+          ssh -i ~/.ssh/deseocerca_staging -p "$port" "$STAGING_USER@$STAGING_HOST" \
+            "set -e; cd '$REMOTE_DIR'; bash deploy/deseocerca/apply-bootstrap.sh"
+
+      - name: Staging runtime smoke check
         shell: bash
         run: |
           set -euo pipefail
@@ -106,6 +121,15 @@ jobs:
           ssh -i ~/.ssh/deseocerca_staging -p "$port" "$STAGING_USER@$STAGING_HOST" \
             "set -e; \
              cd '$REMOTE_DIR'; \
-             docker compose --env-file .env -f deploy/deseocerca/compose.staging.yml exec -T app php -v >/dev/null; \
-             docker compose --env-file .env -f deploy/deseocerca/compose.staging.yml exec -T caddy wget -qO- http://app/ >/dev/null; \
-             echo 'DeseoCerca staging containers are responding.'"
+             compose='docker compose --env-file .env -f deploy/deseocerca/compose.staging.yml'; \
+             \$compose exec -T app php -v >/dev/null; \
+             \$compose exec -T caddy wget -qO- http://app/ >/dev/null; \
+             if \$compose exec -T app test -s /var/www/html/_constants.php; then \
+               \$compose exec -T app test ! -d /var/www/html/_install; \
+               \$compose ps --status running --services | grep -qx lifecycle; \
+               \$compose exec -T app php deploy/deseocerca/verify-runtime.php; \
+               echo 'DeseoCerca staging installed runtime is healthy.'; \
+             else \
+               \$compose exec -T app test -d /var/www/html/_install; \
+               echo 'DeseoCerca staging is responding and waiting for the first browser installation.'; \
+             fi"
