@@ -35,9 +35,31 @@ jobs:
           bash -n deploy/deseocerca/backup.sh
           bash -n deploy/deseocerca/restore-backup.sh
           bash -n deploy/deseocerca/host-preflight.sh
+          python3 -m py_compile deploy/deseocerca/update-env.py
           systemd-analyze calendar '*-*-* 03:20:00 America/Lima' >/dev/null
           docker compose run --rm --no-deps php sh -lc \
             "php -l deploy/deseocerca/cli-bootstrap.php && php -l deploy/deseocerca/account-lifecycle.php && php -l deploy/deseocerca/verify-runtime.php && php -l _protected/app/system/modules/user/models/AccountLifecycleModel.php"
+
+      - name: Validate safe staging environment overlay
+        run: |
+          set -euo pipefail
+          env_file="$(mktemp)"
+          trap 'rm -f "$env_file"' EXIT
+          cat > "$env_file" <<'EOF'
+          MYSQL_DATABASE=deseocerca
+          MYSQL_USER=deseocerca
+          MYSQL_PASSWORD=0123456789abcdef
+          MYSQL_ROOT_PASSWORD=fedcba9876543210
+          STAGING_SITE_ADDRESS=:80
+          PH7_MAILER_DSN=smtp://user:pass@example.invalid:587?encryption=tls&auth_mode=login
+          EOF
+          printf '%s\n' '{"STAGING_SITE_ADDRESS":"staging.deseocerca.com"}' \
+            | python3 deploy/deseocerca/update-env.py "$env_file"
+          grep -Fxq 'MYSQL_PASSWORD=0123456789abcdef' "$env_file"
+          grep -Fxq 'MYSQL_ROOT_PASSWORD=fedcba9876543210' "$env_file"
+          grep -Fxq 'STAGING_SITE_ADDRESS=staging.deseocerca.com' "$env_file"
+          grep -Fxq 'PH7_MAILER_DSN=smtp://user:pass@example.invalid:587?encryption=tls&auth_mode=login' "$env_file"
+          test "$(stat -c '%a' "$env_file")" = '600'
 
       - name: Validate staging Compose configuration
         env:
