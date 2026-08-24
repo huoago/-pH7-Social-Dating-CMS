@@ -22,6 +22,8 @@ final class AccountLifecycleModel
     public const STATE_INACTIVE_DEACTIVATED = 'inactive_deactivated';
 
     private const TABLE = 'account_lifecycle';
+    private const REMINDER_TABLE = 'account_lifecycle_reminders';
+    private const REMINDER_CODES = ['d60', 'd83', 'd85', 'd86', 'd87', 'd88', 'd89'];
 
     public function scheduleDeletion(int $profileId, string $recoveryTokenHash): bool
     {
@@ -76,7 +78,7 @@ final class AccountLifecycleModel
             $rLifecycle = $oDb->prepare(
                 'UPDATE' . Db::prefix(self::TABLE) .
                 "SET state = 'active', deleteRequestedAt = NULL, deleteScheduledAt = NULL, recoveryTokenHash = NULL, "
-                . 'warning60SentAt = NULL, warning83SentAt = NULL, inactiveDeactivatedAt = NULL, updatedAt = NOW() '
+                . 'inactiveDeactivatedAt = NULL, updatedAt = NOW() '
                 . 'WHERE profileId = :profileId LIMIT 1'
             );
             $rLifecycle->bindValue(':profileId', $profileId, \PDO::PARAM_INT);
@@ -93,35 +95,34 @@ final class AccountLifecycleModel
     }
 
     /**
-     * Return active accounts inside one inactivity-warning window.
+     * Return active accounts inside one exact inactivity reminder window.
      *
-     * Example: 60..83 selects accounts inactive for at least 60 days but
-     * strictly less than 83 days, preventing two staged warnings on one run.
+     * Reminder idempotency is keyed by profile + reminder code + the account's
+     * current lastActivity value. A later successful login changes lastActivity,
+     * automatically starting a new inactivity cycle without deleting audit rows.
      */
-    public function getWarningCandidates(int $minimumDays, int $maximumDays, string $warningField): array
+    public function getReminderCandidates(int $minimumDays, int $maximumDays, string $reminderCode): array
     {
-        if ($minimumDays < 1 || $maximumDays <= $minimumDays) {
-            throw new \InvalidArgumentException('Invalid inactivity warning window.');
-        }
-        if (!in_array($warningField, ['warning60SentAt', 'warning83SentAt'], true)) {
-            throw new \InvalidArgumentException('Unsupported inactivity warning field.');
-        }
+        $this->validateReminderWindow($minimumDays, $maximumDays, $reminderCode);
 
         $oNow = new DateTimeImmutable('now');
-        $sWarningCutoff = $oNow->modify(sprintf('-%d days', $minimumDays))->format(UserCoreModel::DATETIME_FORMAT);
-        $sNextStageCutoff = $oNow->modify(sprintf('-%d days', $maximumDays))->format(UserCoreModel::DATETIME_FORMAT);
+        $sWindowStart = $oNow->modify(sprintf('-%d days', $minimumDays))->format(UserCoreModel::DATETIME_FORMAT);
+        $sWindowEnd = $oNow->modify(sprintf('-%d days', $maximumDays))->format(UserCoreModel::DATETIME_FORMAT);
         $rStmt = Db::getInstance()->prepare(
             'SELECT m.profileId, m.email, m.username, m.firstName, m.lastActivity '
             . 'FROM' . Db::prefix(DbTableName::MEMBER) . 'AS m '
             . 'LEFT JOIN' . Db::prefix(self::TABLE) . 'AS l ON l.profileId = m.profileId '
+            . 'LEFT JOIN' . Db::prefix(self::REMINDER_TABLE) . 'AS r '
+            . 'ON r.profileId = m.profileId AND r.reminderCode = :reminderCode AND r.activityAnchor = m.lastActivity '
             . 'WHERE m.active = :active AND m.username <> :ghostUsername '
-            . 'AND m.lastActivity <= :warningCutoff AND m.lastActivity > :nextStageCutoff '
-            . "AND (l.state IS NULL OR l.state = 'active') AND l." . $warningField . ' IS NULL'
+            . 'AND m.lastActivity <= :windowStart AND m.lastActivity > :windowEnd '
+            . "AND (l.state IS NULL OR l.state = 'active') AND r.profileId IS NULL"
         );
+        $rStmt->bindValue(':reminderCode', $reminderCode, \PDO::PARAM_STR);
         $rStmt->bindValue(':active', RegistrationCore::NO_ACTIVATION, \PDO::PARAM_INT);
         $rStmt->bindValue(':ghostUsername', PH7_GHOST_USERNAME, \PDO::PARAM_STR);
-        $rStmt->bindValue(':warningCutoff', $sWarningCutoff, \PDO::PARAM_STR);
-        $rStmt->bindValue(':nextStageCutoff', $sNextStageCutoff, \PDO::PARAM_STR);
+        $rStmt->bindValue(':windowStart', $sWindowStart, \PDO::PARAM_STR);
+        $rStmt->bindValue(':windowEnd', $sWindowEnd, \PDO::PARAM_STR);
         $rStmt->execute();
         $aRows = $rStmt->fetchAll(\PDO::FETCH_OBJ);
         Db::free($rStmt);
@@ -129,19 +130,19 @@ final class AccountLifecycleModel
         return (array)$aRows;
     }
 
-    public function markWarningSent(int $profileId, string $warningField): bool
+    public function markReminderSent(int $profileId, string $reminderCode, string $activityAnchor): bool
     {
-        if (!in_array($warningField, ['warning60SentAt', 'warning83SentAt'], true)) {
-            throw new \InvalidArgumentException('Unsupported inactivity warning field.');
+        if (!in_array($reminderCode, self::REMINDER_CODES, true)) {
+            throw new \InvalidArgumentException('Unsupported inactivity reminder code.');
         }
 
         $rStmt = Db::getInstance()->prepare(
-            'INSERT INTO' . Db::prefix(self::TABLE) .
-            '(profileId, state, ' . $warningField . ', createdAt, updatedAt) '
-            . "VALUES (:profileId, 'active', NOW(), NOW(), NOW()) "
-            . 'ON DUPLICATE KEY UPDATE ' . $warningField . ' = NOW(), updatedAt = NOW()'
+            'INSERT IGNORE INTO' . Db::prefix(self::REMINDER_TABLE) .
+            '(profileId, reminderCode, activityAnchor, sentAt) VALUES (:profileId, :reminderCode, :activityAnchor, NOW())'
         );
         $rStmt->bindValue(':profileId', $profileId, \PDO::PARAM_INT);
+        $rStmt->bindValue(':reminderCode', $reminderCode, \PDO::PARAM_STR);
+        $rStmt->bindValue(':activityAnchor', $activityAnchor, \PDO::PARAM_STR);
         $bResult = $rStmt->execute();
         Db::free($rStmt);
 
@@ -217,20 +218,13 @@ final class AccountLifecycleModel
         return (array)$aRows;
     }
 
-    public function resetWarningsForRecentlyActiveMembers(): int
+    private function validateReminderWindow(int $minimumDays, int $maximumDays, string $reminderCode): void
     {
-        $sCutoff = (new DateTimeImmutable('now'))->modify('-60 days')->format(UserCoreModel::DATETIME_FORMAT);
-        $rStmt = Db::getInstance()->prepare(
-            'UPDATE' . Db::prefix(self::TABLE) . 'AS l '
-            . 'INNER JOIN' . Db::prefix(DbTableName::MEMBER) . 'AS m ON m.profileId = l.profileId '
-            . 'SET l.warning60SentAt = NULL, l.warning83SentAt = NULL, l.updatedAt = NOW() '
-            . "WHERE l.state = 'active' AND m.lastActivity > :cutoff"
-        );
-        $rStmt->bindValue(':cutoff', $sCutoff, \PDO::PARAM_STR);
-        $rStmt->execute();
-        $iAffected = $rStmt->rowCount();
-        Db::free($rStmt);
-
-        return $iAffected;
+        if ($minimumDays < 1 || $maximumDays <= $minimumDays) {
+            throw new \InvalidArgumentException('Invalid inactivity reminder window.');
+        }
+        if (!in_array($reminderCode, self::REMINDER_CODES, true)) {
+            throw new \InvalidArgumentException('Unsupported inactivity reminder code.');
+        }
     }
 }
