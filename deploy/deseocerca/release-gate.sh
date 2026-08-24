@@ -3,13 +3,21 @@ set -euo pipefail
 
 REMOTE_DIR="${DESEOCERCA_DIR:-/opt/deseocerca-staging}"
 ENV_FILE="${DESEOCERCA_ENV_FILE:-$REMOTE_DIR/.env}"
-COMPOSE_FILE="${DESEOCERCA_COMPOSE_FILE:-$REMOTE_DIR/deploy/deseocerca/compose.staging.yml}"
+COMPOSE_FILE="${DESEOCERCA_COMPOSE_FILE:-}"
 BACKUP_DIR="${DESEOCERCA_BACKUP_DIR:-/var/backups/deseocerca}"
-MODE="${DESEOCERCA_GATE_MODE:-staging}"
 EXPECTED_HOST="${1:-}"
+MODE="${2:-${DESEOCERCA_GATE_MODE:-staging}}"
 MAX_BACKUP_AGE_SECONDS="${DESEOCERCA_MAX_BACKUP_AGE_SECONDS:-129600}"
 SITE_ENV_KEY="${DESEOCERCA_SITE_ENV_KEY:-STAGING_SITE_ADDRESS}"
 LEGAL_NOTICE="$REMOTE_DIR/_protected/app/system/modules/page/views/base/tpl/main/legalnotice.tpl"
+
+if [ -z "$COMPOSE_FILE" ]; then
+  if [ -f "$ENV_FILE" ] && grep -Eq '^TIDB_HOST=.+$' "$ENV_FILE"; then
+    COMPOSE_FILE="$REMOTE_DIR/deploy/deseocerca/compose.free.yml"
+  else
+    COMPOSE_FILE="$REMOTE_DIR/deploy/deseocerca/compose.staging.yml"
+  fi
+fi
 
 failures=0
 warnings=0
@@ -19,11 +27,11 @@ warn() { printf 'WARN  %s\n' "$*"; warnings=$((warnings + 1)); }
 fail() { printf 'FAIL  %s\n' "$*"; failures=$((failures + 1)); }
 
 if [ "$MODE" != "staging" ] && [ "$MODE" != "production" ]; then
-  echo "DESEOCERCA_GATE_MODE must be staging or production." >&2
+  echo "Gate mode must be staging or production." >&2
   exit 2
 fi
 if [[ ! "$EXPECTED_HOST" =~ ^[A-Za-z0-9.-]+$ ]]; then
-  echo "Usage: DESEOCERCA_GATE_MODE=staging|production $0 <hostname>" >&2
+  echo "Usage: $0 <hostname> [staging|production]" >&2
   exit 2
 fi
 if [[ ! "$SITE_ENV_KEY" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
@@ -37,7 +45,7 @@ fi
 
 printf 'DeseoCerca release gate (%s)\n==============================\n' "$MODE"
 
-if DESEOCERCA_DIR="$REMOTE_DIR" DESEOCERCA_ENV_FILE="$ENV_FILE" \
+if DESEOCERCA_DIR="$REMOTE_DIR" DESEOCERCA_ENV_FILE="$ENV_FILE" DESEOCERCA_COMPOSE_FILE="$COMPOSE_FILE" \
     bash "$REMOTE_DIR/deploy/deseocerca/host-preflight.sh" "$EXPECTED_HOST"; then
   pass "host preflight has no hard failures"
 else
@@ -45,13 +53,30 @@ else
 fi
 
 compose=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
-for service in db app caddy lifecycle; do
+database_service="db"
+if "${compose[@]}" config --services | grep -qx 'db-tls'; then
+  database_service="db-tls"
+fi
+for service in "$database_service" app caddy lifecycle; do
   if "${compose[@]}" ps --status running --services 2>/dev/null | grep -qx "$service"; then
     pass "container running: $service"
   else
     fail "required container is not running: $service"
   fi
 done
+
+if [ "$database_service" = "db-tls" ]; then
+  tidb_user="$(grep -m1 '^TIDB_USERNAME=' "$ENV_FILE" | cut -d= -f2- || true)"
+  tidb_database="$(grep -m1 '^TIDB_DATABASE=' "$ENV_FILE" | cut -d= -f2- || true)"
+  if [ -n "$tidb_user" ] && [ -n "$tidb_database" ] && \
+     "${compose[@]}" run --rm --no-deps -T --entrypoint mysql db-client \
+       --host=db-tls --port=3306 --user="$tidb_user" --database="$tidb_database" \
+       --connect-timeout=10 --execute='SELECT 1' >/dev/null 2>&1; then
+    pass "TiDB Cloud connection succeeds through verified TLS proxy"
+  else
+    fail "TiDB Cloud database connectivity check failed"
+  fi
+fi
 
 if "${compose[@]}" exec -T app test -s /var/www/html/_constants.php; then
   pass "pH7 installation constants exist"
@@ -72,8 +97,6 @@ fi
 
 site_address="$(grep -m1 -E "^${SITE_ENV_KEY}=" "$ENV_FILE" | cut -d= -f2- || true)"
 site_matches=false
-# Caddyfile-style environment substitution can expand one environment value into
-# multiple address tokens. Accept either spaces or commas between configured hosts.
 while IFS= read -r token; do
   [ -n "$token" ] || continue
   token="${token#http://}"
