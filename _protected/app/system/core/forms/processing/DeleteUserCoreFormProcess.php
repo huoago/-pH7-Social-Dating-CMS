@@ -12,6 +12,7 @@ namespace PH7;
 
 defined('PH7') or exit('Restricted access');
 
+use PH7\Framework\File\Import;
 use PH7\Framework\Mail\Mail;
 use PH7\Framework\Mvc\Model\DbConfig;
 use PH7\Framework\Mvc\Request\Http;
@@ -43,14 +44,79 @@ class DeleteUserCoreFormProcess extends Form
         $mLogin = $this->oUserModel->login($this->sEmail, $this->httpRequest->post('password', Http::NO_CLEAN), $sTable);
         if ($mLogin === CredentialStatusCore::INCORRECT_PASSWORD_IN_DB) {
             \PFBC\Form::setError('form_delete_account', t('Oops! This password you entered is incorrect.'));
-        } else {
-            $this->session->regenerateId();
-            $this->sendWarnEmail();
-            $this->removeAccount();
-            (new UserCore)->logout($this->session);
 
-            $this->redirectToGoodbyePage();
+            return;
         }
+
+        $this->session->regenerateId();
+
+        if ($this->registry->module === 'user') {
+            $this->scheduleMemberDeletion();
+
+            return;
+        }
+
+        // Affiliates keep the upstream immediate-delete behavior. The 90-day
+        // recovery policy applies to DeseoCerca member profiles only.
+        $this->sendWarnEmail();
+        $this->removeAccount();
+        (new UserCore)->logout($this->session);
+        $this->redirectToGoodbyePage();
+    }
+
+    /**
+     * Schedule a member profile for deletion after a 90-day recovery window.
+     */
+    private function scheduleMemberDeletion(): void
+    {
+        Import::pH7App(PH7_SYS . PH7_MOD . 'user.models.AccountLifecycleModel');
+
+        $iProfileId = (int)$this->session->get('member_id');
+        $sRecoveryToken = bin2hex(random_bytes(32));
+        $sRecoveryTokenHash = hash('sha256', $sRecoveryToken);
+        $oLifecycleModel = new AccountLifecycleModel();
+
+        if (!$oLifecycleModel->scheduleDeletion($iProfileId, $sRecoveryTokenHash)) {
+            \PFBC\Form::setError(
+                'form_delete_account',
+                t('We could not schedule your account deletion. Please try again or contact support.')
+            );
+
+            return;
+        }
+
+        // active=0 removes the profile from ordinary account access while the
+        // lifecycle record keeps the recovery path available for 90 days.
+        $this->oUserModel->approve($iProfileId, 0);
+        $this->sendWarnEmail();
+        $this->sendRecoveryEmail($sRecoveryToken);
+        (new UserCore)->logout($this->session);
+
+        Header::redirect(
+            Uri::get('user', 'main', 'index'),
+            t('Your account is deactivated and scheduled for deletion in 90 days. We sent you a recovery link in case you change your mind.')
+        );
+    }
+
+    /**
+     * Send the account owner a recovery link whose raw token is never stored.
+     */
+    private function sendRecoveryEmail(string $sRecoveryToken): bool
+    {
+        $sRecoveryLink = Uri::get('user', 'account', 'recoverdeletion') . PH7_SH . $sRecoveryToken;
+        $sSafeLink = htmlspecialchars($sRecoveryLink, ENT_QUOTES, PH7_ENCODING);
+        $sMessageHtml = '<p>Tu cuenta de DeseoCerca ha sido desactivada y está programada para eliminarse definitivamente en 90 días.</p>'
+            . '<p>Si cambias de opinión antes de que termine ese plazo, puedes recuperar la cuenta desde este enlace:</p>'
+            . '<p><a href="' . $sSafeLink . '">' . $sSafeLink . '</a></p>'
+            . '<p>Si solicitaste la eliminación, no necesitas hacer nada más.</p>';
+
+        return (new Mail())->send(
+            [
+                'to' => $this->sEmail,
+                'subject' => 'DeseoCerca: recuperación de cuenta antes de la eliminación'
+            ],
+            $sMessageHtml
+        );
     }
 
     /**
@@ -82,24 +148,25 @@ class DeleteUserCoreFormProcess extends Form
         );
 
         $sMembershipName = $this->registry->module === 'user' ? t('Member') : t('Affiliate');
+        $sSubject = $this->registry->module === 'user'
+            ? t('Scheduled deletion request - %0%: %1%', $sMembershipName, $this->sUsername)
+            : t('Unsubscribe %0% - User: %1%', $sMembershipName, $this->sUsername);
 
-        /**
-         * Set the details for sending the email, then send it.
-         */
-        $aInfo = [
-            'to' => $sAdminEmail,
-            'subject' => t('Unsubscribe %0% - User: %1%', $sMembershipName, $this->sUsername)
-        ];
-
-        return (new Mail)->send($aInfo, $sMessageHtml);
+        return (new Mail)->send(
+            [
+                'to' => $sAdminEmail,
+                'subject' => $sSubject
+            ],
+            $sMessageHtml
+        );
     }
 
     /**
-     * Remove the user/affiliate account.
+     * Remove the affiliate account immediately using the upstream behavior.
      */
     private function removeAccount(): void
     {
-        $oUser = $this->registry->module === 'user' ? new UserCore : new AffiliateCore;
+        $oUser = new AffiliateCore;
         $oUser->delete($this->session->get($this->sSessPrefix . '_id'), $this->sUsername, $this->oUserModel);
         unset($oUser);
     }
