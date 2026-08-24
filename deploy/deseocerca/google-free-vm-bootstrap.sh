@@ -47,7 +47,6 @@ fi
 systemctl enable --now docker
 usermod -aG docker "$DEPLOY_USER"
 
-# e2-micro has about 1 GiB RAM. Keep a 2 GiB swap file to absorb short PHP/Docker spikes.
 if [ "$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)" -lt 1800 ] && ! swapon --show=NAME --noheadings | grep -qx /swapfile; then
   if [ ! -f /swapfile ]; then
     fallocate -l 2G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=2048
@@ -119,13 +118,12 @@ systemctl daemon-reload
 systemctl enable --now deseocerca-backup.timer
 
 cat > /etc/sudoers.d/deseocerca-deploy <<EOF
-$DEPLOY_USER ALL=(root) NOPASSWD: /bin/bash $REMOTE_DIR/deploy/deseocerca/google-free-vm-bootstrap.sh
-$DEPLOY_USER ALL=(root) NOPASSWD: /bin/bash $REMOTE_DIR/deploy/deseocerca/backup-free.sh
-$DEPLOY_USER ALL=(root) NOPASSWD: /bin/bash $REMOTE_DIR/deploy/deseocerca/restore-free.sh *
+$DEPLOY_USER ALL=(root) NOPASSWD: /bin/bash $REMOTE_DIR/deploy/deseocerca/root-ops.sh *
 $DEPLOY_USER ALL=(root) NOPASSWD: /bin/bash $REMOTE_DIR/deploy/deseocerca/prepare-first-install-free.sh
-$DEPLOY_USER ALL=(root) NOPASSWD: /usr/bin/systemctl *
+$DEPLOY_USER ALL=(root) NOPASSWD: /bin/bash $REMOTE_DIR/deploy/deseocerca/restore-free.sh *
 EOF
 chmod 440 /etc/sudoers.d/deseocerca-deploy
+visudo -cf /etc/sudoers.d/deseocerca-deploy >/dev/null
 
 echo "Google Free Tier host prepared at $REMOTE_DIR."
 echo "No local MySQL server was installed; TiDB Cloud Starter will be used through a TLS proxy."
