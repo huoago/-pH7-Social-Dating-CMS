@@ -33,6 +33,7 @@ jobs:
           bash -n deploy/deseocerca/free-vm-bootstrap.sh
           bash -n deploy/deseocerca/apply-bootstrap.sh
           bash -n deploy/deseocerca/backup.sh
+          bash -n deploy/deseocerca/restore-backup.sh
           systemd-analyze calendar '*-*-* 03:20:00 America/Lima' >/dev/null
           docker compose run --rm --no-deps php sh -lc \
             "php -l deploy/deseocerca/cli-bootstrap.php && php -l deploy/deseocerca/account-lifecycle.php && php -l deploy/deseocerca/verify-runtime.php && php -l _protected/app/system/modules/user/models/AccountLifecycleModel.php"
