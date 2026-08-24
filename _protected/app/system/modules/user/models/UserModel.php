@@ -53,11 +53,13 @@ class UserModel extends UserCoreModel
     {
         $mResult = parent::search($aParams, $bCount, $iOffset, $iLimit);
 
-        if ($bCount || empty($this->iProfileId) || !is_array($mResult) || empty($mResult)) {
+        if ($bCount || !is_array($mResult) || empty($mResult)) {
             return $mResult;
         }
 
-        $aExcludedIds = array_flip((new BlockModel())->getExcludedIds((int)$this->iProfileId));
+        $aExcludedIds = empty($this->iProfileId)
+            ? []
+            : array_flip((new BlockModel())->getExcludedIds((int)$this->iProfileId));
 
         return array_values(
             array_filter(
