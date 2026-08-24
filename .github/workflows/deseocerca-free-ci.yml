@@ -34,8 +34,21 @@ jobs:
         run: |
           set -euo pipefail
           sql='_install/data/sql/MySQL/pH7_Core.sql'
-          if grep -Eiq '\b(CREATE[[:space:]]+(TRIGGER|PROCEDURE|FUNCTION|EVENT)|FULLTEXT|SPATIAL)\b' "$sql"; then
-            echo "The pH7 schema now contains a TiDB-incompatible feature."
+
+          # TiDB Cloud Starter supports FULLTEXT only in selected AWS regions.
+          # DeseoCerca deliberately relies on exactly the existing error-log
+          # FULLTEXT index and the deployment workflow restricts TiDB to one of
+          # those supported regions. Other known unsupported MySQL constructs
+          # remain release blockers.
+          if grep -Eiq '\bCREATE[[:space:]]+(TRIGGER|PROCEDURE|FUNCTION|EVENT)\b|\bSPATIAL\b' "$sql"; then
+            echo "The pH7 schema contains a TiDB-incompatible trigger/procedure/function/event/spatial feature."
+            exit 1
+          fi
+
+          expected_fulltext='^[[:space:]]*FULLTEXT[[:space:]]+KEY[[:space:]]+logError[[:space:]]*\(logError\)[[:space:]]*$'
+          fulltext_total="$(grep -Eic '^[[:space:]]*FULLTEXT[[:space:]]+(KEY|INDEX)\b' "$sql" || true)"
+          if [ "$fulltext_total" -ne 1 ] || ! grep -Eq "$expected_fulltext" "$sql"; then
+            echo "Unexpected FULLTEXT schema change. Free Tier deployment only permits the existing ph7_log_error.logError index."
             exit 1
           fi
 
