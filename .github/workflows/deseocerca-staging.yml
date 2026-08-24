@@ -34,6 +34,7 @@ jobs:
       STAGING_SITE_ADDRESS: ${{ secrets.DESEOCERCA_STAGING_SITE_ADDRESS }}
       MAILER_DSN: ${{ secrets.DESEOCERCA_STAGING_MAILER_DSN }}
       REMOTE_DIR: /opt/deseocerca-staging
+      SOURCE_REF: ${{ github.ref_name }}
 
     steps:
       - name: Checkout deployment scripts
@@ -50,6 +51,13 @@ jobs:
               exit 1
             fi
           done
+          case "$SOURCE_REF" in
+            deseocerca-v1|18.x) ;;
+            *)
+              echo "Staging deployment is restricted to deseocerca-v1 or 18.x; got '$SOURCE_REF'."
+              exit 1
+              ;;
+          esac
           if [[ ! "$STAGING_USER" =~ ^[a-z_][a-z0-9_-]*\$?$ ]]; then
             echo "STAGING_USER contains unsupported characters."
             exit 1
@@ -106,7 +114,7 @@ jobs:
              test -f '$REMOTE_DIR/.env' || { echo 'Missing staging .env. Re-run with prepare_host=true.'; exit 1; }; \
              test -w '$REMOTE_DIR' || { echo 'Staging directory is not writable by the SSH deployment user.'; exit 1; }"
 
-      - name: Sync DeseoCerca branch to staging VM
+      - name: Sync selected release branch to staging VM
         shell: bash
         run: |
           set -euo pipefail
@@ -114,9 +122,10 @@ jobs:
           ssh -i ~/.ssh/deseocerca_staging -p "$port" "$STAGING_USER@$STAGING_HOST" \
             "set -e; \
              cd '$REMOTE_DIR'; \
-             git fetch --prune origin deseocerca-v1; \
-             git checkout -f deseocerca-v1; \
-             git reset --hard origin/deseocerca-v1"
+             git fetch --prune origin '+refs/heads/$SOURCE_REF:refs/remotes/origin/$SOURCE_REF'; \
+             git checkout -B '$SOURCE_REF' 'origin/$SOURCE_REF'; \
+             git reset --hard 'origin/$SOURCE_REF'; \
+             test \"\$(git rev-parse HEAD)\" = '$GITHUB_SHA'"
 
       - name: Update non-database staging environment
         shell: bash

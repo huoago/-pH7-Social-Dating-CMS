@@ -3,11 +3,12 @@ set -euo pipefail
 
 REMOTE_DIR="${DESEOCERCA_DIR:-/opt/deseocerca-staging}"
 ENV_FILE="${DESEOCERCA_ENV_FILE:-$REMOTE_DIR/.env}"
-COMPOSE_FILE="$REMOTE_DIR/deploy/deseocerca/compose.staging.yml"
+COMPOSE_FILE="${DESEOCERCA_COMPOSE_FILE:-$REMOTE_DIR/deploy/deseocerca/compose.staging.yml}"
 BACKUP_DIR="${DESEOCERCA_BACKUP_DIR:-/var/backups/deseocerca}"
 MODE="${DESEOCERCA_GATE_MODE:-staging}"
 EXPECTED_HOST="${1:-}"
 MAX_BACKUP_AGE_SECONDS="${DESEOCERCA_MAX_BACKUP_AGE_SECONDS:-129600}"
+SITE_ENV_KEY="${DESEOCERCA_SITE_ENV_KEY:-STAGING_SITE_ADDRESS}"
 LEGAL_NOTICE="$REMOTE_DIR/_protected/app/system/modules/page/views/base/tpl/main/legalnotice.tpl"
 
 failures=0
@@ -23,6 +24,10 @@ if [ "$MODE" != "staging" ] && [ "$MODE" != "production" ]; then
 fi
 if [[ ! "$EXPECTED_HOST" =~ ^[A-Za-z0-9.-]+$ ]]; then
   echo "Usage: DESEOCERCA_GATE_MODE=staging|production $0 <hostname>" >&2
+  exit 2
+fi
+if [[ ! "$SITE_ENV_KEY" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+  echo "DESEOCERCA_SITE_ENV_KEY is invalid." >&2
   exit 2
 fi
 if [ ! -f "$ENV_FILE" ] || [ ! -f "$COMPOSE_FILE" ]; then
@@ -65,11 +70,26 @@ else
   fail "DeseoCerca runtime verifier failed"
 fi
 
-site_address="$(grep -m1 '^STAGING_SITE_ADDRESS=' "$ENV_FILE" | cut -d= -f2- || true)"
-if [ "$site_address" = "$EXPECTED_HOST" ]; then
-  pass "configured site address matches release-gate host"
+site_address="$(grep -m1 -E "^${SITE_ENV_KEY}=" "$ENV_FILE" | cut -d= -f2- || true)"
+site_matches=false
+# Caddyfile-style environment substitution can expand one environment value into
+# multiple address tokens. Accept either spaces or commas between configured hosts.
+while IFS= read -r token; do
+  [ -n "$token" ] || continue
+  token="${token#http://}"
+  token="${token#https://}"
+  token="${token%%/*}"
+  token="${token%%:*}"
+  if [ "$token" = "$EXPECTED_HOST" ]; then
+    site_matches=true
+    break
+  fi
+done < <(printf '%s' "$site_address" | tr ',' ' ' | tr -s '[:space:]' '\n')
+
+if [ "$site_matches" = true ]; then
+  pass "configured site addresses include release-gate host"
 else
-  fail "STAGING_SITE_ADDRESS='$site_address' does not match '$EXPECTED_HOST'"
+  fail "$SITE_ENV_KEY='$site_address' does not include '$EXPECTED_HOST'"
 fi
 
 if ENV_FILE="$ENV_FILE" python3 - <<'PY'
@@ -150,25 +170,35 @@ else
   pass "Legal Notice operator placeholder has been removed"
 fi
 
+current_sha="$(git -C "$REMOTE_DIR" rev-parse HEAD 2>/dev/null || true)"
+if [[ "$current_sha" =~ ^[a-f0-9]{40}$ ]]; then
+  pass "release revision resolved: $current_sha"
+else
+  fail "could not resolve the deployed Git revision"
+fi
+
+approval_markers=(
+  /root/deseocerca-legal-approved
+  /root/deseocerca-e2e-approved
+  /root/deseocerca-restore-drill-approved
+  /root/deseocerca-offsite-backup-approved
+)
+
 if [ "$MODE" = "production" ]; then
-  for marker in \
-    /root/deseocerca-legal-approved \
-    /root/deseocerca-e2e-approved \
-    /root/deseocerca-restore-drill-approved \
-    /root/deseocerca-offsite-backup-approved; do
-    if [ -s "$marker" ]; then
-      pass "production approval marker exists: $marker"
+  for marker in "${approval_markers[@]}"; do
+    if [ -s "$marker" ] && grep -Fxq "release_sha=$current_sha" "$marker"; then
+      pass "production approval matches release: $marker"
     else
-      fail "missing production approval marker: $marker"
+      fail "missing or stale production approval for release $current_sha: $marker"
     fi
   done
 else
-  for marker in \
-    /root/deseocerca-legal-approved \
-    /root/deseocerca-e2e-approved \
-    /root/deseocerca-restore-drill-approved \
-    /root/deseocerca-offsite-backup-approved; do
-    [ -s "$marker" ] || warn "production approval marker not present yet: $marker"
+  for marker in "${approval_markers[@]}"; do
+    if [ -s "$marker" ] && grep -Fxq "release_sha=$current_sha" "$marker"; then
+      pass "production approval already matches current release: $marker"
+    else
+      warn "production approval not recorded for current release: $marker"
+    fi
   done
 fi
 
