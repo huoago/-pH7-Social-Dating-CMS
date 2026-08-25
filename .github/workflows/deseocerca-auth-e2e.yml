@@ -1,0 +1,152 @@
+name: DeseoCerca Disposable Auth E2E
+
+on:
+  push:
+    branches: [deseocerca-auth-e2e]
+    paths:
+      - '.github/workflows/deseocerca-auth-e2e.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deseocerca-disposable-auth-e2e
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      SUPABASE_URL: https://ostmkogqfyepxakqfgnd.supabase.co
+      SUPABASE_KEY: sb_publishable_1a0ntgqpl79ygaKe7xixmw_a_DCGMQT
+    steps:
+      - name: Run disposable real-Auth E2E
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v jq >/dev/null
+          prefix="dc-e2e-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          email_a="${prefix}-a@example.invalid"
+          email_b="${prefix}-b@example.invalid"
+          pass_a="DcA!$(openssl rand -hex 24)"
+          pass_b="DcB!$(openssl rand -hex 24)"
+          echo "::add-mask::$pass_a"
+          echo "::add-mask::$pass_b"
+
+          api() {
+            local method="$1" url="$2" token="${3:-}" data="${4:-}" type="${5:-application/json}"
+            local -a args=(-sS -X "$method" -H "apikey: $SUPABASE_KEY" -H "Content-Type: $type")
+            if [ -n "$token" ]; then args+=(-H "Authorization: Bearer $token"); fi
+            if [ -n "$data" ]; then args+=(--data "$data"); fi
+            curl "${args[@]}" -w $'\n%{http_code}' "$url"
+          }
+
+          split_response() {
+            local raw="$1"
+            HTTP_CODE="${raw##*$'\n'}"
+            HTTP_BODY="${raw%$'\n'*}"
+          }
+
+          require_2xx() {
+            local label="$1" raw="$2"
+            split_response "$raw"
+            if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+              echo "$label failed with HTTP $HTTP_CODE"
+              printf '%s\n' "$HTTP_BODY" | jq -c 'del(.access_token,.refresh_token,.session)' 2>/dev/null || true
+              exit 1
+            fi
+          }
+
+          expect_denied() {
+            local label="$1" raw="$2"
+            split_response "$raw"
+            if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+              echo "$label unexpectedly succeeded (HTTP $HTTP_CODE)"
+              exit 1
+            fi
+            echo "$label correctly denied with HTTP $HTTP_CODE"
+          }
+
+          signup() {
+            local email="$1" pass="$2"
+            local raw
+            raw="$(api POST "$SUPABASE_URL/auth/v1/signup" '' "$(jq -nc --arg e "$email" --arg p "$pass" '{email:$e,password:$p}')")"
+            require_2xx "signup $email" "$raw"
+            TOKEN="$(jq -r '.access_token // empty' <<<"$HTTP_BODY")"
+            USER_ID="$(jq -r '.user.id // empty' <<<"$HTTP_BODY")"
+            if [ -z "$USER_ID" ]; then echo "signup returned no user id"; exit 1; fi
+            if [ -z "$TOKEN" ]; then
+              echo "AUTH_CONFIRMATION_REQUIRED=1"
+              echo "Supabase accepted signup but did not issue a session. Full unattended E2E requires email confirmation."
+              exit 12
+            fi
+            echo "::add-mask::$TOKEN"
+          }
+
+          signup "$email_a" "$pass_a"; token_a="$TOKEN"; user_a="$USER_ID"
+          signup "$email_b" "$pass_b"; token_b="$TOKEN"; user_b="$USER_ID"
+
+          # Server-side age gate must reject an under-18 birth date.
+          raw="$(api POST "$SUPABASE_URL/rest/v1/rpc/complete_onboarding" "$token_a" '{"p_birth_date":"2012-01-01","p_username":"e2e_user_a","p_display_name":"E2E A","p_city":"Lima","p_gender":"hombre","p_seeking":"mujeres","p_relationship_goal":"citas","p_bio":"Temporal","p_languages":["es"],"p_interest_ids":[]}')"
+          expect_denied 'underage onboarding' "$raw"
+
+          raw="$(api POST "$SUPABASE_URL/rest/v1/rpc/complete_onboarding" "$token_a" '{"p_birth_date":"1990-01-01","p_username":"e2e_user_a","p_display_name":"E2E A","p_city":"Lima","p_gender":"hombre","p_seeking":"mujeres","p_relationship_goal":"citas","p_bio":"Temporal A","p_languages":["es"],"p_interest_ids":[]}')"; require_2xx 'onboarding A' "$raw"
+          raw="$(api POST "$SUPABASE_URL/rest/v1/rpc/complete_onboarding" "$token_b" '{"p_birth_date":"1992-02-02","p_username":"e2e_user_b","p_display_name":"E2E B","p_city":"Lima","p_gender":"mujer","p_seeking":"hombres","p_relationship_goal":"citas","p_bio":"Temporal B","p_languages":["es"],"p_interest_ids":[]}')"; require_2xx 'onboarding B' "$raw"
+
+          # Sensitive account fields must be non-writable by a normal user.
+          raw="$(api PATCH "$SUPABASE_URL/rest/v1/profiles?id=eq.$user_a" "$token_a" '{"status":"suspended"}')"; expect_denied 'direct status escalation' "$raw"
+
+          # Cross-user private birth date must not be readable.
+          raw="$(api GET "$SUPABASE_URL/rest/v1/profile_private?user_id=eq.$user_a&select=user_id,birth_date" "$token_b")"; require_2xx 'private profile cross-read request' "$raw"
+          if [ "$(jq 'length' <<<"$HTTP_BODY")" -ne 0 ]; then echo 'private profile leaked across users'; exit 1; fi
+
+          # Upload a real 1x1 PNG to the private moderated bucket.
+          printf '%s' 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WlE4xAAAAAASUVORK5CYII=' | base64 -d > /tmp/e2e.png
+          raw="$(curl -sS -X POST -H "apikey: $SUPABASE_KEY" -H "Authorization: Bearer $token_a" -H 'Content-Type: image/png' --data-binary @/tmp/e2e.png -w $'\n%{http_code}' "$SUPABASE_URL/storage/v1/object/profile-photos/$user_a/e2e.png")"; require_2xx 'photo upload' "$raw"
+          raw="$(api POST "$SUPABASE_URL/rest/v1/profile_photos" "$token_a" "$(jq -nc --arg u "$user_a" --arg p "$user_a/e2e.png" '{user_id:$u,storage_path:$p,is_primary:false}')")"; require_2xx 'photo metadata insert' "$raw"
+          raw="$(api GET "$SUPABASE_URL/rest/v1/profile_photos?user_id=eq.$user_a&storage_path=eq.$user_a/e2e.png&select=id,status" "$token_a")"; require_2xx 'photo status read' "$raw"
+          photo_id="$(jq -r '.[0].id // empty' <<<"$HTTP_BODY")"; photo_status="$(jq -r '.[0].status // empty' <<<"$HTTP_BODY")"
+          [ -n "$photo_id" ] && [ "$photo_status" = 'pending' ] || { echo 'new photo is not pending'; exit 1; }
+          raw="$(api PATCH "$SUPABASE_URL/rest/v1/profile_photos?id=eq.$photo_id" "$token_a" '{"status":"approved"}')"; expect_denied 'self photo approval' "$raw"
+
+          # Mutual likes must create one match and one conversation.
+          raw="$(api POST "$SUPABASE_URL/rest/v1/likes" "$token_a" "$(jq -nc --arg a "$user_a" --arg b "$user_b" '{liker_id:$a,liked_id:$b}')")"; require_2xx 'like A->B' "$raw"
+          raw="$(api POST "$SUPABASE_URL/rest/v1/likes" "$token_b" "$(jq -nc --arg a "$user_b" --arg b "$user_a" '{liker_id:$a,liked_id:$b}')")"; require_2xx 'like B->A' "$raw"
+          raw="$(api GET "$SUPABASE_URL/rest/v1/matches?select=id,user_a,user_b,conversation_id&or=(user_a.eq.$user_a,user_b.eq.$user_a)" "$token_a")"; require_2xx 'match read' "$raw"
+          [ "$(jq 'length' <<<"$HTTP_BODY")" -eq 1 ] || { echo 'mutual like did not create exactly one visible match'; exit 1; }
+          conversation="$(jq -r '.[0].conversation_id' <<<"$HTTP_BODY")"
+
+          # Matched conversation message.
+          raw="$(api POST "$SUPABASE_URL/rest/v1/messages" "$token_b" "$(jq -nc --arg c "$conversation" --arg u "$user_b" '{conversation_id:$c,sender_id:$u,body:"mensaje e2e temporal"}')")"; require_2xx 'matched message' "$raw"
+
+          # Report must default to open and ordinary user must not set resolution fields.
+          raw="$(api POST "$SUPABASE_URL/rest/v1/reports" "$token_a" "$(jq -nc --arg a "$user_a" --arg b "$user_b" --arg c "$conversation" '{reporter_id:$a,reported_user_id:$b,conversation_id:$c,reason:"harassment",details:"reporte e2e temporal"}')")"; require_2xx 'report insert' "$raw"
+          raw="$(api GET "$SUPABASE_URL/rest/v1/reports?reporter_id=eq.$user_a&select=id,status,resolution_note&limit=1" "$token_a")"; require_2xx 'own report read' "$raw"
+          report_id="$(jq -r '.[0].id // empty' <<<"$HTTP_BODY")"; [ "$(jq -r '.[0].status // empty' <<<"$HTTP_BODY")" = 'open' ] || { echo 'report did not default to open'; exit 1; }
+          raw="$(api PATCH "$SUPABASE_URL/rest/v1/reports?id=eq.$report_id" "$token_a" '{"status":"resolved","resolution_note":"self"}')"; expect_denied 'self report resolution' "$raw"
+          raw="$(api GET "$SUPABASE_URL/rest/v1/reports?reporter_id=eq.$user_a&select=id" "$token_b")"; require_2xx 'other report cross-read request' "$raw"
+          [ "$(jq 'length' <<<"$HTTP_BODY")" -eq 0 ] || { echo 'report leaked to unrelated ordinary user'; exit 1; }
+
+          # Block must cut off further messaging and profile visibility.
+          raw="$(api POST "$SUPABASE_URL/rest/v1/blocks" "$token_a" "$(jq -nc --arg a "$user_a" --arg b "$user_b" '{blocker_id:$a,blocked_id:$b}')")"; require_2xx 'block A->B' "$raw"
+          raw="$(api POST "$SUPABASE_URL/rest/v1/messages" "$token_b" "$(jq -nc --arg c "$conversation" --arg u "$user_b" '{conversation_id:$c,sender_id:$u,body:"must be blocked"}')")"; expect_denied 'message after block' "$raw"
+          raw="$(api GET "$SUPABASE_URL/rest/v1/profiles?id=eq.$user_a&select=id,username" "$token_b")"; require_2xx 'blocked profile read request' "$raw"
+          [ "$(jq 'length' <<<"$HTTP_BODY")" -eq 0 ] || { echo 'blocked profile remained visible'; exit 1; }
+
+          # Account lifecycle RPCs.
+          for action in deactivate reactivate request_delete cancel_delete; do
+            raw="$(api POST "$SUPABASE_URL/rest/v1/rpc/set_my_account_state" "$token_a" "$(jq -nc --arg a "$action" '{_action:$a}')")"; require_2xx "account state $action" "$raw"
+          done
+
+          # Ordinary user cannot claim the initial admin role.
+          raw="$(api POST "$SUPABASE_URL/rest/v1/rpc/claim_initial_admin" "$token_a" '{}')"; expect_denied 'unauthorized initial admin claim' "$raw"
+
+          # Remove uploaded object while still authenticated as its owner.
+          raw="$(curl -sS -X DELETE -H "apikey: $SUPABASE_KEY" -H "Authorization: Bearer $token_a" -w $'\n%{http_code}' "$SUPABASE_URL/storage/v1/object/profile-photos/$user_a/e2e.png")"; require_2xx 'photo cleanup' "$raw"
+
+          echo "E2E_USER_A=$user_a"
+          echo "E2E_USER_B=$user_b"
+          echo "E2E_EMAIL_PREFIX=$prefix"
+          echo 'DESEOCERCA_REAL_AUTH_E2E_OK=1'
