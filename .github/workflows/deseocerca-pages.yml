@@ -1,0 +1,85 @@
+name: DeseoCerca Web Production
+
+on:
+  pull_request:
+    branches: [18.x]
+    paths:
+      - 'site/**'
+      - '.github/workflows/deseocerca-pages.yml'
+  push:
+    branches: [18.x]
+    paths:
+      - 'site/**'
+      - '.github/workflows/deseocerca-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deseocerca-web-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Validate JavaScript syntax
+        run: node --check site/app.js
+      - name: Validate production static assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s site/index.html
+          test -s site/styles.css
+          test -s site/app.js
+          test -s site/404.html
+          grep -Fq 'DeseoCerca' site/index.html
+          grep -Fq 'Solo mayores de 18 años' site/app.js
+          grep -Fq '/terminos' site/app.js
+          grep -Fq '/privacidad' site/app.js
+          grep -Fq '/seguridad' site/app.js
+          grep -Fq '/normas-comunidad' site/app.js
+          grep -Fq '/cookies' site/app.js
+          grep -Fq '/contacto' site/app.js
+          ! grep -Eiq 'service[_-]?role|sb_secret_' site/index.html site/app.js site/styles.css
+      - name: Verify live Supabase public endpoint
+        shell: bash
+        env:
+          SUPABASE_URL: https://ostmkogqfyepxakqfgnd.supabase.co
+          SUPABASE_KEY: sb_publishable_1a0ntgqpl79ygaKe7xixmw_a_DCGMQT
+        run: |
+          set -euo pipefail
+          code="$(curl --silent --show-error --output /tmp/interests.json --write-out '%{http_code}' \
+            -H "apikey: $SUPABASE_KEY" \
+            "$SUPABASE_URL/rest/v1/interests?select=id,name_es&limit=1")"
+          test "$code" = "200"
+          python3 - <<'PY'
+          import json
+          rows=json.load(open('/tmp/interests.json'))
+          assert isinstance(rows,list)
+          PY
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/18.x'
+    needs: validate
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Upload static site
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
