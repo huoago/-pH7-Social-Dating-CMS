@@ -1,4 +1,4 @@
-name: DeseoCerca Web Production
+name: DeseoCerca Web Release Gate
 
 on:
   pull_request:
@@ -44,6 +44,19 @@ jobs:
           grep -Fq '/cookies' site/app.js
           grep -Fq '/contacto' site/app.js
           ! grep -Eiq 'service[_-]?role|sb_secret_' site/index.html site/app.js site/styles.css
+      - name: Verify immutable CDN assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          COMMIT='5d64a034f60c65c1e184113861501aaebaf320f1'
+          curl --fail --silent --show-error --location \
+            "https://cdn.jsdelivr.net/gh/huoago/-pH7-Social-Dating-CMS@${COMMIT}/site/app.js" \
+            --output /tmp/app.js
+          curl --fail --silent --show-error --location \
+            "https://cdn.jsdelivr.net/gh/huoago/-pH7-Social-Dating-CMS@${COMMIT}/site/styles.css" \
+            --output /tmp/styles.css
+          node --check /tmp/app.js
+          test -s /tmp/styles.css
       - name: Verify live Supabase public endpoint
         shell: bash
         env:
@@ -60,26 +73,3 @@ jobs:
           rows=json.load(open('/tmp/interests.json'))
           assert isinstance(rows,list)
           PY
-
-  deploy:
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/18.x'
-    needs: validate
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-      - name: Upload static site
-        uses: actions/upload-pages-artifact@v4
-        with:
-          path: site
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
